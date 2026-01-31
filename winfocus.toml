@@ -2,16 +2,16 @@
 # Tray restoration whitelist
 
 [[tray]]
-process = "LINE.exe"
-title = "LINE"
-exe = "C:\\Users\\t_nikai\\AppData\\Local\\LINE\\bin\\current\\LINE.exe"
-
-[[tray]]
 process = "thunderbird.exe"
 title = "Mozilla Thunderbird"
 exe = "C:\\Users\\t_nikai\\AppData\\Local\\Microsoft\\WindowsApps\\thunderbird.exe"
 
 [[tray]]
 process = "SystemMonitor.exe"
-title = "Moo0 システムモニター"
+title = ""
 exe = "C:\\Program Files (x86)\\Moo0\\SystemMonitor 1.83\\SystemMonitor.exe"
+
+[[tray]]
+process = "LINE.exe"
+title = "LINE"
+exe = "C:\\Users\\t_nikai\\AppData\\Local\\LINE\\bin\\current\\LINE.exe"
