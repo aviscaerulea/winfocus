@@ -36,7 +36,6 @@ typedef struct {
     char titlePattern[MAX_TITLEPATTERN];   /* タイトルパターン（空文字列の場合は全ウィンドウ対象） */
     char exePath[MAX_PATH];                /* 実行ファイルパス（ShellExecute 用、空文字列なら不使用） */
     BOOL found;                            /* EnumWindows で該当ウィンドウが見つかったか */
-    BOOL earlyLaunched;                    /* 早期 ShellExecute で起動済みか */
 } WhitelistEntry;
 
 /* 除外するシステムウィンドウのクラス名 */
@@ -467,31 +466,16 @@ int main(void)
     /* プライマリモニタの作業領域を取得 */
     SystemParametersInfo(SPI_GETWORKAREA, 0, &ctx.workArea, 0);
 
-    /* ホワイトリスト内の exe 指定ありエントリについて、
-     * プロセスが存在しなければ先に ShellExecute で起動（早期発行） */
-    int shellExecuteCount = 0;
-    for (int i = 0; i < ctx.whitelistCount; i++) {
-        if (ctx.whitelist[i].titlePattern[0] != '\0' &&
-            ctx.whitelist[i].exePath[0] != '\0' &&
-            !is_process_running(ctx.whitelist[i].procName)) {
-
-            ShellExecuteA(NULL, "open", ctx.whitelist[i].exePath, NULL, NULL, SW_SHOWNORMAL);
-            ctx.whitelist[i].found = FALSE;  /* ポーリング対象としてマーク */
-            ctx.whitelist[i].earlyLaunched = TRUE;  /* 早期発行済みマーク */
-            shellExecuteCount++;
-        }
-    }
-
-    /* 全ウィンドウを列挙して処理（早期発行したアプリはバックグラウンドで起動中） */
+    /* 全ウィンドウを列挙して処理 */
     EnumWindows(enum_callback, (LPARAM)&ctx);
 
-    /* EnumWindows 後の ShellExecute ループは、
-     * プロセスが存在するのにウィンドウが見つからないケース用に残す */
+    /* ウィンドウ未検出かつプロセスが存在するエントリに対して ShellExecute で復元 */
+    int shellExecuteCount = 0;
     for (int i = 0; i < ctx.whitelistCount; i++) {
         if (!ctx.whitelist[i].found &&
             ctx.whitelist[i].titlePattern[0] != '\0' &&
             ctx.whitelist[i].exePath[0] != '\0' &&
-            !ctx.whitelist[i].earlyLaunched) {  /* 早期発行済みでなければ */
+            is_process_running(ctx.whitelist[i].procName)) {
 
             ShellExecuteA(NULL, "open", ctx.whitelist[i].exePath, NULL, NULL, SW_SHOWNORMAL);
             shellExecuteCount++;
