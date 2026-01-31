@@ -216,18 +216,20 @@ static BOOL CALLBACK enum_callback(HWND hwnd, LPARAM lParam)
         return TRUE;
     }
 
-    /* ウィンドウスタイルを取得 */
-    LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-
-    /* ツールウィンドウは除外 */
-    if (exStyle & WS_EX_TOOLWINDOW) {
-        return TRUE;
-    }
-
     /* タイトルを取得 */
     char title[256] = {0};
     GetWindowTextA(hwnd, title, sizeof(title));
     BOOL hasTitle = (title[0] != '\0');
+
+    /* ウィンドウスタイルを取得 */
+    LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+
+    /* ツールウィンドウは除外（ホワイトリストのプロセスは例外） */
+    if (exStyle & WS_EX_TOOLWINDOW) {
+        if (find_whitelist_entry(ctx, pid, title) < 0) {
+            return TRUE;
+        }
+    }
 
     BOOL visible = IsWindowVisible(hwnd);
     int whitelistIndex = -1;
