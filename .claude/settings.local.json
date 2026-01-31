@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c build.bat)",
+      "Bash(cmd.exe /c \"D:\\\\project-tmp\\\\新しいフォルダー\\\\build.bat\")",
+      "Bash(cmd.exe /c \"cd /d D:\\\\project-private\\\\winfocus && build.bat\")",
+      "Bash(cmd.exe /c \"cd /d D:\\\\project-private\\\\winfocus && build.bat 2>&1\")",
+      "Bash(pwsh.exe -Command \"cd D:\\\\project-private\\\\winfocus; .\\\\build.bat\")",
+      "Bash(./build.bat)",
+      "Bash(git add:*)"
+    ]
+  }
+}

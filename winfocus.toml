@@ -1,0 +1,7 @@
+# winfocus.toml
+# Tray restoration whitelist
+
+[[tray]]
+process = "LINE.exe"
+title = "LINE"
+exe = "C:\\Users\\t_nikai\\AppData\\Local\\LINE\\bin\\current\\LINE.exe"
