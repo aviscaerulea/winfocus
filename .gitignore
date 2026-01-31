@@ -1,8 +1,4 @@
-# Build artifacts
 out/
-
-# Task runner cache
+.claude/
 .task/
-
-# Release artifacts
 *.zip
