@@ -54,6 +54,7 @@ typedef struct {
     DWORD            myPid;                     /* 自プロセスの PID */
     WhitelistEntry   whitelist[MAX_WHITELIST];  /* ホワイトリスト */
     int              whitelistCount;            /* ホワイトリストのエントリ数 */
+    BOOL             whitelistOnly;             /* TRUE: ホワイトリストのみ処理、FALSE: ホワイトリスト以外を処理 */
 } EnumContext;
 
 /*
@@ -231,6 +232,21 @@ static BOOL CALLBACK enum_callback(HWND hwnd, LPARAM lParam)
         }
     }
 
+    /* whitelistOnly モードでのフィルタリング */
+    int earlyWhitelistIndex = find_whitelist_entry(ctx, pid, title);
+
+    if (ctx->whitelistOnly) {
+        /* ホワイトリストに一致しないウィンドウはスキップ */
+        if (earlyWhitelistIndex < 0) {
+            return TRUE;
+        }
+    } else {
+        /* 非ホワイトリストモード: ホワイトリストのウィンドウはスキップ */
+        if (earlyWhitelistIndex >= 0) {
+            return TRUE;
+        }
+    }
+
     BOOL visible = IsWindowVisible(hwnd);
     int whitelistIndex = -1;
 
@@ -239,13 +255,8 @@ static BOOL CALLBACK enum_callback(HWND hwnd, LPARAM lParam)
          * 可視ウィンドウの処理
          * ApplicationFrameHost の不可視子ウィンドウは EnumWindows では
          * トップレベルとして列挙されないため、ここでは可視のもののみ処理する
-         *
-         * ホワイトリストエントリに該当するウィンドウを検出して found フラグを設定
          */
         whitelistIndex = find_whitelist_entry(ctx, pid, title);
-        if (whitelistIndex >= 0) {
-            ctx->whitelist[whitelistIndex].found = TRUE;
-        }
     } else {
         /*
          * 非表示ウィンドウの処理
@@ -259,8 +270,6 @@ static BOOL CALLBACK enum_callback(HWND hwnd, LPARAM lParam)
         if (whitelistIndex < 0) {
             return TRUE;
         }
-
-        ctx->whitelist[whitelistIndex].found = TRUE;
     }
 
     /* 最小化・最大化されていれば通常サイズに復元 */
@@ -293,6 +302,11 @@ static BOOL CALLBACK enum_callback(HWND hwnd, LPARAM lParam)
                      ctx->workArea.left, ctx->workArea.top,
                      0, 0,
                      SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    /* ホワイトリストウィンドウの移動完了を検証 */
+    if (whitelistIndex >= 0 && is_on_primary(hwnd)) {
+        ctx->whitelist[whitelistIndex].found = TRUE;
     }
 
     /* メッセージキュー安定化のためのウェイト */
@@ -468,7 +482,12 @@ int main(void)
     /* プライマリモニタの作業領域を取得 */
     SystemParametersInfo(SPI_GETWORKAREA, 0, &ctx.workArea, 0);
 
-    /* 全ウィンドウを列挙して処理 */
+    /* Phase 1: 非ホワイトリストウィンドウの処理（1 回のみ） */
+    ctx.whitelistOnly = FALSE;
+    EnumWindows(enum_callback, (LPARAM)&ctx);
+
+    /* Phase 2: ホワイトリストウィンドウの処理 */
+    ctx.whitelistOnly = TRUE;
     EnumWindows(enum_callback, (LPARAM)&ctx);
 
     /* ウィンドウ未検出かつプロセスが存在するエントリに対して ShellExecute で復元 */
