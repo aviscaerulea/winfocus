@@ -1,0 +1,23 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build winfocus.exe
+    cmds:
+      - cmd: cmd /c "scripts\\build.bat"
+        platforms: [windows]
+    sources:
+      - winfocus.c
+    generates:
+      - out/winfocus.exe
+      - out/winfocus.obj
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - cmd: cmd /c "if exist out rmdir /s /q out"
+        platforms: [windows]
+
+  default:
+    cmds:
+      - task: build

@@ -1,6 +1,8 @@
 # Build artifacts
-*.exe
-*.obj
+out/
+
+# Task runner cache
+.task/
 
 # Release artifacts
 *.zip
