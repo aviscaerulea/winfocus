@@ -1,3 +1,6 @@
 # Build artifacts
 *.exe
 *.obj
+
+# Release artifacts
+*.zip
