@@ -3,7 +3,7 @@
 
 [[tray]]
 process = "thunderbird.exe"
-title = "Mozilla Thunderbird"
+title = ""
 exe = "C:\\Users\\t_nikai\\AppData\\Local\\Microsoft\\WindowsApps\\thunderbird.exe"
 
 [[tray]]
