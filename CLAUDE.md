@@ -16,38 +16,68 @@ DisplayFusion によるウィンドウ再配置の前処理として使用する
 
 - **言語**: C (Win32 API 直接呼び出し)
 - **ビルド**: cl.exe (Visual Studio 2026) によるバッチビルド
-- **構成**: `winfocus.c` + `build.bat`
-- **ターゲット**: Windows 11 x64、コンソールアプリ
+- **構成**: `src/winfocus.c` + `scripts/build.bat`
+- **ターゲット**: Windows 11 x64
 - **DPI 対応**: 不要
 
 ### ファイル構成
 
 ```
 winfocus/
-├── winfocus.c       // メインソース (177 行)
+├── src/
+│   └── winfocus.c   // メインソース
+├── winfocus.toml    // 設定ファイル（exe と同じディレクトリに配置）
 └── scripts/
-    └── build.bat    // ビルドスクリプト（Developer Command Prompt で実行）
+    └── build.bat    // ビルドスクリプト
 ```
 
 ### 動作仕様
 
 #### 実行形態
 
+| コマンド | 動作 |
+|----------|------|
+| `winfocus` | ウィンドウ配置を保存してからプライマリモニタに集約 |
+| `winfocus --restore` | 保存した配置に全ウィンドウを復元して保存ファイルを削除 |
+
+共通仕様：
+
 - CLI 実行のみ（常駐・ホットキーなし）
 - サイレント実行（stdout/stderr 出力なし）
 - 処理完了時に MessageBeep(MB_OK) でシステムサウンドを鳴らす
 - 終了コード: 0
 
+#### ウィンドウ配置の保存・復元
+
+- 保存先：`%TEMP%\winfocus_positions.dat`（バイナリ形式）
+- 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（位置 + 最小化・最大化状態）
+- 復元時の照合：HWND の有効性 + PID + クラス名の 3 条件を検証
+- 同一セッション内での復元を前提とする
+- F11 全画面状態は保存のみで復元対象外
+
 #### 対象ウィンドウ
 
 - タスクバーに表示されている可視ウィンドウ（最小化含む）
+- `winfocus.toml` のホワイトリストに登録されたツールウィンドウ
 
 #### 除外ウィンドウ
 
 - システムウィンドウ: Shell_TrayWnd, Progman, WorkerW, Button, Shell_SecondaryTrayWnd
-- ツールウィンドウ: WS_EX_TOOLWINDOW スタイルを持つもの
+- ツールウィンドウ: WS_EX_TOOLWINDOW スタイルを持つもの（ホワイトリスト除外あり）
 - 非表示ウィンドウ: トレイ常駐アプリ等はスルーする
 - 自プロセスのウィンドウ
+
+#### 設定ファイル（winfocus.toml）
+
+exe と同じディレクトリに配置する。
+
+```toml
+[toolwindow_whitelist]
+classes = ["SystemMetersWnd"]
+```
+
+`WS_EX_TOOLWINDOW` スタイルを持つウィンドウのうち、`classes` に列挙したクラス名のウィンドウは処理対象とする。
+ファイルが存在しない場合はホワイトリストなしで動作する。
 
 #### ウィンドウ処理（全対象に一様に適用）
 
@@ -78,7 +108,7 @@ cd D:\project-private\winfocus
 task build
 ```
 
-成功すると `out\winfocus.exe` (約 105KB) が生成される。
+成功すると `out\winfocus.exe` が生成される。
 
 > **注意**: build.bat 内に日本語コメントを書かないこと。Windows のバッチファイルは CP932 で解釈されるため、UTF-8 の日本語がコマンドとして誤実行される。
 
@@ -98,4 +128,13 @@ task build
 - `GetWindowRect` - ウィンドウ矩形取得（F11 全画面判定用）
 - `SystemParametersInfo(SPI_GETWORKAREA)` - プライマリモニタ作業領域取得
 - `GetWindowThreadProcessId` / `GetCurrentProcessId` - プロセス判定
+- `GetWindowPlacement` / `SetWindowPlacement` - 配置情報（位置・表示状態）の取得・復元
+- `IsWindow` - HWND 有効性検証（復元時）
+- `GetTempPathA` - 保存ファイルパスの組み立て
+- `GetModuleFileNameA` - 設定ファイルパスの組み立て
+- `DeleteFileA` - 復元完了後の保存ファイル削除
 - `MessageBeep` - システムサウンド再生（処理完了通知）
+
+## 参考
+
+@README.md
