@@ -30,4 +30,4 @@ REM Create output directory
 if not exist out mkdir out
 
 REM Build
-cl.exe /O2 /W4 /utf-8 /Fo:out\ /Fe:out\winfocus.exe winfocus.c user32.lib /link /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup
+cl.exe /O2 /W4 /utf-8 /Fo:out\ /Fe:out\winfocus.exe src\winfocus.c user32.lib /link /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup
