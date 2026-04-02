@@ -20,6 +20,10 @@ if not defined VSINSTALL (
 
 REM Setup Visual Studio environment
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Failed to set up Visual Studio environment.
+    exit /b 1
+)
 
 :build
 REM Create output directory

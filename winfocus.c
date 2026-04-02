@@ -6,8 +6,7 @@
  * DisplayFusion によるウィンドウ再配置の前処理として使用する。
  *
  * ビルド:
- *   build.bat を Developer Command Prompt for VS で実行
- *   cl.exe /O2 /W4 /Fe:winfocus.exe winfocus.c user32.lib
+ *   task build
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -43,7 +42,8 @@ static BOOL is_excluded_class(const char *className)
 }
 
 /*
- * ウィンドウがプライマリモニタ上にあるか判定する
+ * プライマリモニタ判定
+ * GetMonitorInfo 失敗時は TRUE を返し、不要なウィンドウ移動を防ぐ。
  */
 static BOOL is_on_primary(HWND hwnd)
 {
@@ -89,49 +89,45 @@ static BOOL is_fullscreen(HWND hwnd)
 }
 
 /*
- * EnumWindows コールバック。各ウィンドウに対してフィルタリングと処理を行う。
+ * EnumWindows コールバック
+ * 各ウィンドウをフィルタリングし、復元・全画面解除・モニタ移動を行う。
  */
 static BOOL CALLBACK enum_callback(HWND hwnd, LPARAM lParam)
 {
     EnumContext *ctx = (EnumContext *)lParam;
 
-    /* 自プロセスのウィンドウは除外 */
+    if (!IsWindowVisible(hwnd)) {
+        return TRUE;
+    }
+
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
     if (pid == ctx->myPid) {
         return TRUE;
     }
 
-    /* クラス名を取得 */
-    char className[256] = {0};
-    GetClassNameA(hwnd, className, sizeof(className));
+    if (GetWindowLong(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) {
+        return TRUE;
+    }
 
-    /* システムウィンドウクラスは除外 */
+    char className[256] = {0};
+    if (GetClassNameA(hwnd, className, sizeof(className)) == 0) {
+        return TRUE;  /* クラス名取得失敗時はスキップ */
+    }
+
     if (is_excluded_class(className)) {
         return TRUE;
     }
 
-    /* ウィンドウスタイルを取得 */
-    LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-
-    /* ツールウィンドウは除外 */
-    if (exStyle & WS_EX_TOOLWINDOW) {
-        return TRUE;
-    }
-
-    /* 非表示ウィンドウは除外 */
-    if (!IsWindowVisible(hwnd)) {
-        return TRUE;
-    }
-
-    /* 最小化・最大化されていれば通常サイズに復元 */
     if (IsIconic(hwnd) || IsZoomed(hwnd)) {
         ShowWindow(hwnd, SW_RESTORE);
+        Sleep(10);  /* 復元完了待ち */
     }
 
     /* F11 全画面の場合、VK_F11 をシミュレートして解除 */
     if (is_fullscreen(hwnd)) {
         SetForegroundWindow(hwnd);
+        Sleep(10);  /* フォアグラウンド確定待ち */
         INPUT inputs[2] = {0};
         inputs[0].type = INPUT_KEYBOARD;
         inputs[0].ki.wVk = VK_F11;
@@ -139,10 +135,9 @@ static BOOL CALLBACK enum_callback(HWND hwnd, LPARAM lParam)
         inputs[1].ki.wVk = VK_F11;
         inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
         SendInput(2, inputs, sizeof(INPUT));
-        Sleep(100);  /* 全画面解除待ち */
+        Sleep(150);  /* 全画面解除・ウィンドウ位置確定待ち */
     }
 
-    /* プライマリモニタ外にあれば移動 */
     if (!is_on_primary(hwnd)) {
         SetWindowPos(hwnd, NULL,
                      ctx->workArea.left, ctx->workArea.top,
@@ -161,16 +156,15 @@ int main(void)
     EnumContext ctx;
     memset(&ctx, 0, sizeof(ctx));
 
-    /* 自プロセスの PID を取得 */
     ctx.myPid = GetCurrentProcessId();
-
-    /* プライマリモニタの作業領域を取得 */
-    SystemParametersInfo(SPI_GETWORKAREA, 0, &ctx.workArea, 0);
-
-    /* 全ウィンドウを処理 */
+    if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &ctx.workArea, 0)) {
+        /* 取得失敗時はスクリーン全体を作業領域とする */
+        ctx.workArea.left   = 0;
+        ctx.workArea.top    = 0;
+        ctx.workArea.right  = GetSystemMetrics(SM_CXSCREEN);
+        ctx.workArea.bottom = GetSystemMetrics(SM_CYSCREEN);
+    }
     EnumWindows(enum_callback, (LPARAM)&ctx);
-
-    /* 処理完了を通知 */
     MessageBeep(MB_OK);
 
     return 0;
