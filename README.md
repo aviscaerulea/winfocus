@@ -25,10 +25,14 @@ task build
 ## 使用方法
 
 ```bat
-winfocus.exe
+winfocus.exe           # 全ウィンドウをプライマリモニタに集約
+winfocus.exe --save    # 現在のウィンドウ配置を保存（移動なし）
+winfocus.exe --restore # 保存した配置に復元
 ```
 
 サイレント実行（出力なし）。処理完了時にシステムサウンドが鳴る。
+
+`--save` は定期実行やスリープ時フックと組み合わせて使用し、`--restore` で直前の状態に戻す。
 
 ## 技術仕様
 

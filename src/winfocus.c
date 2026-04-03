@@ -6,6 +6,7 @@
  * DisplayFusion によるウィンドウ再配置の前処理として使用する。
  *
  *   winfocus           全ウィンドウをプライマリモニタに集約（位置を自動保存）
+ *   winfocus --save    現在のウィンドウ位置を保存する（移動なし）
  *   winfocus --restore 保存した位置に全ウィンドウを復元
  *
  * ビルド:
@@ -493,15 +494,21 @@ int main(int argc, char *argv[])
 {
     load_config();
 
-    BOOL doRestore = (argc >= 2 && _stricmp(argv[1], "--restore") == 0);
+    const char *arg1 = (argc >= 2) ? argv[1] : NULL;
 
-    if (doRestore) {
+    if (arg1 && _stricmp(arg1, "--restore") == 0) {
         restore_positions();
         MessageBeep(MB_OK);
         return 0;
     }
 
     DWORD myPid = GetCurrentProcessId();
+
+    if (arg1 && _stricmp(arg1, "--save") == 0) {
+        save_positions(myPid);
+        MessageBeep(MB_OK);
+        return 0;
+    }
 
     /* 移動前にウィンドウ配置を保存 */
     save_positions(myPid);
