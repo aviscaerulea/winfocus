@@ -20,10 +20,9 @@ tasks:
       - cmd: pwsh.exe -NoProfile -Command "if (Test-Path out) { Remove-Item -Recurse -Force out }"
 
   build:
-    desc: デバッグビルド（out/winfocus.exe）
+    desc: ビルド（out/winfocus.exe）
     cmds:
-      - cmd: cmd /c "scripts\\build.bat"
-        platforms: [windows]
+      - pwsh -NonInteractive -File build.ps1
       - cmd: pwsh.exe -NoProfile -Command "Copy-Item '{{.APP_NAME}}.toml' 'out/'"
     sources:
       - src/winfocus.c

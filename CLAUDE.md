@@ -27,8 +27,7 @@ winfocus/
 ├── src/
 │   └── winfocus.c   // メインソース
 ├── winfocus.toml    // 設定ファイル（exe と同じディレクトリに配置）
-└── scripts/
-    └── build.bat    // ビルドスクリプト
+└── build.ps1        // ビルドスクリプト（DevShell モジュール経由）
 ```
 
 ### 動作仕様
@@ -99,10 +98,7 @@ classes = ["SystemMetersWnd"]
 
 ### ビルド方法
 
-**Developer Command Prompt for VS** から実行する必要がある（通常の cmd.exe では cl.exe にパスが通っていない）。
-
-1. スタートメニューから「Developer Command Prompt for VS 2026」を開く
-2. プロジェクトディレクトリに移動して `task build` を実行する
+通常のターミナルや Claude Code から `task build` で実行できる。`build.ps1` が DevShell モジュール経由で VS 環境を自動初期化するため、Developer Command Prompt を使う必要はない。
 
 ```bat
 cd D:\project-private\winfocus
@@ -110,8 +106,6 @@ task build
 ```
 
 成功すると `out\winfocus.exe` が生成される。
-
-> **注意**: build.bat 内に日本語コメントを書かないこと。Windows のバッチファイルは CP932 で解釈されるため、UTF-8 の日本語がコマンドとして誤実行される。
 
 ### 使用する Win32 API
 

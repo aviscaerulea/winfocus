@@ -1,0 +1,19 @@
+# vi: ts=4 sw=4 ff=unix fenc=utf-8 bomb
+# winfocus ビルドスクリプト
+# DevShell モジュール経由で VC++ ビルド環境を初期化し、cl でビルドする。
+
+# VS 開発環境の初期化（DevShell モジュール経由、Build Tools 対応）
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$vsPath = & $vswhere -products '*' -latest -property installationPath
+if (-not $vsPath) { Write-Error "Visual Studio / Build Tools が見つからない"; exit 1 }
+
+$devShellDll = Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+if (-not (Test-Path $devShellDll)) { Write-Error "DevShell.dll が見つからない: $devShellDll"; exit 1 }
+Import-Module $devShellDll
+Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64"
+
+New-Item -ItemType Directory -Force -Path out | Out-Null
+
+cl /nologo /O2 /W4 /utf-8 /Fo:out\ /Fe:out\winfocus.exe src\winfocus.c `
+    user32.lib /link /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup
+if ($LASTEXITCODE) { exit 1 }
