@@ -223,7 +223,7 @@ static BOOL CALLBACK save_callback(HWND hwnd, LPARAM lParam)
 
 /*
  * 移動フェーズの EnumWindows コールバック
- * 各ウィンドウをフィルタリングし、復元・全画面解除・モニタ移動を行う。
+ * 各ウィンドウをフィルタリングし、復元・全画面解除・モニタ移動・最小化を行う。
  */
 static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
 {
@@ -234,7 +234,23 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
         return TRUE;
     }
 
-    if (IsIconic(hwnd) || IsZoomed(hwnd)) {
+    BOOL iconic = IsIconic(hwnd);
+
+    /* 既に最小化かつプライマリモニタ上なら復元不要。最小化状態を維持して終了 */
+    if (iconic) {
+        WINDOWPLACEMENT wp = {0};
+        wp.length = sizeof(wp);
+        if (GetWindowPlacement(hwnd, &wp)) {
+            HMONITOR hMon = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi = {0};
+            mi.cbSize = sizeof(mi);
+            if (GetMonitorInfo(hMon, &mi) && (mi.dwFlags & MONITORINFOF_PRIMARY)) {
+                return TRUE;
+            }
+        }
+    }
+
+    if (iconic || IsZoomed(hwnd)) {
         ShowWindow(hwnd, SW_RESTORE);
         Sleep(10);  /* 復元完了待ち */
     }
@@ -259,6 +275,8 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
                      0, 0,
                      SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
+
+    ShowWindow(hwnd, SW_MINIMIZE);
 
     /* メッセージキュー安定化のためのウェイト */
     Sleep(5);

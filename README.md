@@ -9,6 +9,7 @@ DisplayFusion によるウィンドウ再配置の前処理として使用する
 - 最小化・最大化ウィンドウを通常サイズに復元
 - F11 全画面ウィンドウを検出して解除
 - セカンダリモニタ上のウィンドウをプライマリモニタに移動
+- 集約後に全ウィンドウを最小化
 
 ## ビルド方法
 
@@ -36,7 +37,7 @@ winfocus.exe
 - **ターゲット**: Windows 11 x64、コンソールアプリ
 - **主要 API**: EnumWindows, SendInput, MonitorFromWindow, SetWindowPos 等
 
-詳細な仕様は `.claude/CLAUDE.md` を参照。
+詳細な仕様は `CLAUDE.md` を参照。
 
 ## ライセンス
 
