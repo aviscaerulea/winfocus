@@ -65,7 +65,3 @@ classes = ["SystemMetersWnd"]
 - **主要 API**: EnumWindows, SendInput, MonitorFromWindow, SetWindowPos 等
 
 詳細な仕様は `CLAUDE.md` を参照。
-
-## ライセンス
-
-MIT
