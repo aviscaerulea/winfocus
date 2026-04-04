@@ -10,6 +10,15 @@ DisplayFusion によるウィンドウ再配置の前処理として使用する
 - F11 全画面ウィンドウを検出して解除
 - セカンダリモニタ上のウィンドウをプライマリモニタに移動
 
+## インストール
+
+[Scoop](https://scoop.sh/) でインストールできる。
+
+```bat
+scoop bucket add aviscaerulea https://github.com/aviscaerulea/scoop-bucket
+scoop install winfocus
+```
+
 ## ビルド方法
 
 プロジェクトディレクトリで以下を実行する。
