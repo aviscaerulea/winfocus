@@ -2,15 +2,17 @@
 
 Win11 上のすべての可視ウィンドウを通常サイズに復元し、プライマリモニタに集約する CLI ツール。
 
-## 概要
-
-DisplayFusion によるウィンドウ再配置の前処理として使用する軽量 CLI ツール。
+## 機能
 
 - 最小化・最大化ウィンドウを通常サイズに復元
 - F11 全画面ウィンドウを検出して解除
 - セカンダリモニタ上のウィンドウをプライマリモニタに移動
 
-## インストール
+## 動作要件
+
+- Windows 11 x64
+
+## インストール方法
 
 [Scoop](https://scoop.sh/) でインストールできる。
 
@@ -18,16 +20,6 @@ DisplayFusion によるウィンドウ再配置の前処理として使用する
 scoop bucket add aviscaerulea https://github.com/aviscaerulea/scoop-bucket
 scoop install winfocus
 ```
-
-## ビルド方法
-
-プロジェクトディレクトリで以下を実行する。
-
-```bat
-task build
-```
-
-成功すると `out\winfocus.exe`（約 105KB）が生成される。
 
 ## 使用方法
 
@@ -64,9 +56,15 @@ classes = ["SystemMetersWnd"]
 
 `WS_EX_TOOLWINDOW` スタイルを持つウィンドウはデフォルトでスキップされるが、`classes` に列挙したクラス名のウィンドウは処理対象に含める。
 
-## 動作要件
+## ビルド方法
 
-- Windows 11 x64
+プロジェクトディレクトリで以下を実行する。
+
+```bat
+task build
+```
+
+成功すると `out\winfocus.exe`（約 105KB）が生成される。
 
 ## 技術仕様
 
@@ -74,5 +72,3 @@ classes = ["SystemMetersWnd"]
 - **ビルド**: cl.exe（Visual Studio 2026）
 - **ターゲット**: Windows 11 x64、コンソールアプリ
 - **主要 API**: EnumWindows, SendInput, MonitorFromWindow, SetWindowPos 等
-
-詳細な仕様は `CLAUDE.md` を参照。
