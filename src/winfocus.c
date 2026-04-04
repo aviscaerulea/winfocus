@@ -511,7 +511,6 @@ int main(int argc, char *argv[])
 
     if (arg1 && _stricmp(arg1, "--restore") == 0) {
         restore_positions();
-        MessageBeep(MB_OK);
         return 0;
     }
 
@@ -519,7 +518,6 @@ int main(int argc, char *argv[])
 
     if (arg1 && _stricmp(arg1, "--save") == 0) {
         save_positions(myPid);
-        MessageBeep(MB_OK);
         return 0;
     }
 
@@ -539,7 +537,6 @@ int main(int argc, char *argv[])
     }
 
     EnumWindows(move_callback, (LPARAM)&ctx);
-    MessageBeep(MB_OK);
 
     return 0;
 }
