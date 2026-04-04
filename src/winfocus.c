@@ -373,8 +373,21 @@ static void restore_positions(void)
             continue;
         }
 
-        /* 位置・表示状態（最大化・最小化含む）を一括復元 */
-        SetWindowPlacement(e->hwnd, &e->placement);
+        /* 位置・表示状態（最大化・最小化含む）を一括復元
+         *
+         * SW_SHOWMAXIMIZED はウィンドウが現在いるモニタで最大化するため、
+         * 先に通常表示で保存座標のモニタに移動してから最大化する 2 ステップで行う。
+         */
+        if (e->placement.showCmd == SW_SHOWMAXIMIZED) {
+            WINDOWPLACEMENT wp = e->placement;
+            wp.showCmd = SW_SHOWNORMAL;
+            SetWindowPlacement(e->hwnd, &wp);
+            Sleep(10);
+            ShowWindow(e->hwnd, SW_MAXIMIZE);
+        }
+        else {
+            SetWindowPlacement(e->hwnd, &e->placement);
+        }
         Sleep(5);
     }
 
