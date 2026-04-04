@@ -237,18 +237,11 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
 
     BOOL iconic = IsIconic(hwnd);
 
-    /* 既に最小化かつプライマリモニタ上なら復元不要。最小化状態を維持して終了 */
-    if (iconic) {
-        WINDOWPLACEMENT wp = {0};
-        wp.length = sizeof(wp);
-        if (GetWindowPlacement(hwnd, &wp)) {
-            HMONITOR hMon = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
-            MONITORINFO mi = {0};
-            mi.cbSize = sizeof(mi);
-            if (GetMonitorInfo(hMon, &mi) && (mi.dwFlags & MONITORINFOF_PRIMARY)) {
-                return TRUE;
-            }
-        }
+    /* 最小化かつプライマリモニタ上なら移動不要（最小化状態を維持して終了）
+     * rcNormalPosition はワークエリア相対座標のため MonitorFromRect では正しく判定できず、
+     * MonitorFromWindow を内部で使用する is_on_primary で判定する。 */
+    if (iconic && is_on_primary(hwnd)) {
+        return TRUE;
     }
 
     if (iconic || IsZoomed(hwnd)) {
@@ -260,14 +253,18 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
     if (is_fullscreen(hwnd)) {
         SetForegroundWindow(hwnd);
         Sleep(10);  /* フォアグラウンド確定待ち */
-        INPUT inputs[2] = {0};
-        inputs[0].type = INPUT_KEYBOARD;
-        inputs[0].ki.wVk = VK_F11;
-        inputs[1].type = INPUT_KEYBOARD;
-        inputs[1].ki.wVk = VK_F11;
-        inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-        SendInput(2, inputs, sizeof(INPUT));
-        Sleep(150);  /* 全画面解除・ウィンドウ位置確定待ち */
+        /* SendInput はフォアグラウンドウィンドウに届くため、
+         * 他のウィンドウがフォーカスを奪った場合はスキップして誤入力を防ぐ */
+        if (GetForegroundWindow() == hwnd) {
+            INPUT inputs[2] = {0};
+            inputs[0].type = INPUT_KEYBOARD;
+            inputs[0].ki.wVk = VK_F11;
+            inputs[1].type = INPUT_KEYBOARD;
+            inputs[1].ki.wVk = VK_F11;
+            inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+            SendInput(2, inputs, sizeof(INPUT));
+            Sleep(150);  /* 全画面解除・ウィンドウ位置確定待ち */
+        }
     }
 
     if (!is_on_primary(hwnd)) {
@@ -277,6 +274,8 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
                      SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
+    /* 移動後に最小化して積み重なりを解消する
+     * （--restore の SetWindowPlacement が安定して動作するよう状態をクリーンにする） */
     ShowWindow(hwnd, SW_MINIMIZE);
 
     /* メッセージキュー安定化のためのウェイト */
@@ -299,16 +298,27 @@ static void save_positions(DWORD myPid)
 
     EnumWindows(save_callback, (LPARAM)&ctx);
 
+    char savePath[MAX_PATH];
+    BOOL hasSavePath = get_save_path(savePath, sizeof(savePath));
+
     if (ctx.count > 0) {
-        char savePath[MAX_PATH];
-        if (get_save_path(savePath, sizeof(savePath))) {
+        if (hasSavePath) {
             FILE *fp = fopen(savePath, "wb");
             if (fp != NULL) {
-                fwrite(&ctx.count, sizeof(int), 1, fp);
-                fwrite(ctx.entries, sizeof(WindowEntry), ctx.count, fp);
+                /* 書き込み失敗（ディスクフル等）時は不完全ファイルを削除 */
+                BOOL ok = (fwrite(&ctx.count, sizeof(int), 1, fp) == 1) &&
+                          ((size_t)fwrite(ctx.entries, sizeof(WindowEntry), ctx.count, fp) ==
+                           (size_t)ctx.count);
                 fclose(fp);
+                if (!ok) {
+                    DeleteFileA(savePath);
+                }
             }
         }
+    }
+    else if (hasSavePath) {
+        /* 対象ウィンドウなし：古い保存ファイルが残っていれば削除 */
+        DeleteFileA(savePath);
     }
 
     free(ctx.entries);
@@ -405,7 +415,8 @@ static void restore_positions(void)
 static void load_config(void)
 {
     char exePath[MAX_PATH] = {0};
-    if (GetModuleFileNameA(NULL, exePath, sizeof(exePath)) == 0) {
+    DWORD fileNameLen = GetModuleFileNameA(NULL, exePath, sizeof(exePath));
+    if (fileNameLen == 0 || fileNameLen >= sizeof(exePath)) {
         return;
     }
 
