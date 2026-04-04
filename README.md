@@ -68,4 +68,4 @@ classes = ["SystemMetersWnd"]
 
 ## ライセンス
 
-Private
+MIT
