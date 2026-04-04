@@ -32,3 +32,9 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Trigger Scoop bucket update
+        run: gh workflow run excavator.yml --repo aviscaerulea/scoop-bucket
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
