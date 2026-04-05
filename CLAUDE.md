@@ -44,13 +44,13 @@ winfocus/
 
 - CLI 実行のみ（常駐・ホットキーなし）
 - サイレント実行（stdout/stderr 出力なし）
-- 処理完了時に MessageBeep(MB_OK) でシステムサウンドを鳴らす
 - 終了コード: 0
 
 #### ウィンドウ配置の保存・復元
 
 - 保存先：`%TEMP%\winfocus_positions.dat`（バイナリ形式）
 - 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（位置 + 最小化・最大化状態）
+- 条件付き保存：最終入力時刻（`GetLastInputInfo`）が保存ファイル更新日時 + 1 分より新しい場合のみ保存を実行する
 - 復元時の照合：HWND の有効性 + PID + クラス名の 3 条件を検証
 - 同一セッション内での復元を前提とする
 - F11 全画面状態は保存のみで復元対象外
@@ -128,7 +128,8 @@ task build
 - `GetTempPathA` - 保存ファイルパスの組み立て
 - `GetModuleFileNameA` - 設定ファイルパスの組み立て
 - `DeleteFileA` - 復元完了後の保存ファイル削除
-- `MessageBeep` - システムサウンド再生（処理完了通知）
+- `GetLastInputInfo` - 最終入力時刻取得（条件付き保存の判定用）
+- `GetFileAttributesExA` - 保存ファイルの更新日時取得（条件付き保存の判定用）
 
 ## 参考
 

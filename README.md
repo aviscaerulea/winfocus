@@ -34,6 +34,7 @@ winfocus.exe --restore # 保存した配置に復元
 ### ウィンドウ配置の保存・復元
 
 `--save` でウィンドウの位置・表示状態（通常・最小化・最大化）を `%TEMP%\winfocus_positions.dat` に保存する。
+前回の保存以降にマウス/キーボード操作がない場合は保存をスキップする（タスクスケジューラでの定期実行時に不要な上書きを防ぐ）。
 `--restore` で保存した配置に復元し、保存ファイルを削除する。
 
 復元の照合は HWND・PID・クラス名の 3 条件で行うため、同一セッション内（アプリを再起動していない状態）での使用を想定している。
@@ -41,7 +42,7 @@ F11 全画面状態は保存のみで復元対象外となる。
 
 > **注意：** 引数なしの `winfocus`（集約）実行後に `--save` を実行すると、集約後のウィンドウ状態（最小化・プライマリモニタ）が保存される。`--restore` での元の配置への復元を意図する場合は、集約前に `--save` を実行してください。
 
-**典型的な用途：**
+典型的な用途：
 
 - タスクスケジューラや PC スリープ時フックで `--save` を定期実行しておき、作業再開時に `--restore` で直前の状態に戻す
 
@@ -68,7 +69,7 @@ task build
 
 ## 技術仕様
 
-- **言語**: C（Win32 API 直接呼び出し）
-- **ビルド**: cl.exe（Visual Studio 2026）
-- **ターゲット**: Windows 11 x64、コンソールアプリ
-- **主要 API**: EnumWindows, SendInput, MonitorFromWindow, SetWindowPos 等
+- 言語：C（Win32 API 直接呼び出し）
+- ビルド：cl.exe（Visual Studio 2026）
+- ターゲット：Windows 11 x64、コンソールアプリ
+- 主要 API：EnumWindows, SendInput, MonitorFromWindow, SetWindowPos 等

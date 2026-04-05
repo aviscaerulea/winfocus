@@ -285,6 +285,43 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
 }
 
 /*
+ * 保存が必要か判定
+ *
+ * 保存ファイルの更新日時 + 1 分と最終入力時刻を比較し、
+ * 保存後 1 分以上経過してからユーザ操作があった場合のみ TRUE を返す。
+ * 保存ファイルが存在しない場合や API 取得失敗時は安全側（TRUE）を返す。
+ */
+static BOOL should_save(const char *savePath)
+{
+    WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+    if (!GetFileAttributesExA(savePath, GetFileExInfoStandard, &fileInfo)) {
+        return TRUE;
+    }
+
+    LASTINPUTINFO lii = { sizeof(LASTINPUTINFO) };
+    if (!GetLastInputInfo(&lii)) {
+        return TRUE;
+    }
+
+    /* 最終入力からの経過ミリ秒を FILETIME（100ns 単位）に変換して最終入力時刻を算出 */
+    DWORD idleMs = GetTickCount() - lii.dwTime;
+    FILETIME ftNow;
+    GetSystemTimeAsFileTime(&ftNow);
+    ULARGE_INTEGER now;
+    now.LowPart = ftNow.dwLowDateTime;
+    now.HighPart = ftNow.dwHighDateTime;
+    ULARGE_INTEGER lastInput;
+    lastInput.QuadPart = now.QuadPart - (ULONGLONG)idleMs * 10000ULL;
+
+    ULARGE_INTEGER fileTime;
+    fileTime.LowPart = fileInfo.ftLastWriteTime.dwLowDateTime;
+    fileTime.HighPart = fileInfo.ftLastWriteTime.dwHighDateTime;
+
+    /* 1 分のマージンを設けて保存直後の再保存を防ぐ */
+    return lastInput.QuadPart > fileTime.QuadPart + 600000000ULL;
+}
+
+/*
  * ウィンドウ配置を保存する
  *
  * 保存先：%TEMP%\winfocus_positions.dat
@@ -292,14 +329,19 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
  */
 static void save_positions(DWORD myPid)
 {
+    char savePath[MAX_PATH];
+    BOOL hasSavePath = get_save_path(savePath, sizeof(savePath));
+
+    /* 最終入力がファイル更新日時以前なら配置変化なしとみなしてスキップ */
+    if (hasSavePath && !should_save(savePath)) {
+        return;
+    }
+
     SaveContext ctx;
     memset(&ctx, 0, sizeof(ctx));
     ctx.myPid = myPid;
 
     EnumWindows(save_callback, (LPARAM)&ctx);
-
-    char savePath[MAX_PATH];
-    BOOL hasSavePath = get_save_path(savePath, sizeof(savePath));
 
     if (ctx.count > 0) {
         if (hasSavePath) {
