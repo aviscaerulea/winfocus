@@ -10,6 +10,14 @@
 #   - %USERPROFILE%\scoop\shims\winfocus.exe が存在すること
 # ==================================================
 
+# 管理者権限チェック：なければ自動昇格して再実行
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Start-Process pwsh -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    exit
+}
+
 $taskName    = "WinFocus_AutoSave"
 $taskPath    = "\"
 $winfocusExe = "$env:USERPROFILE\scoop\shims\winfocus.exe"
