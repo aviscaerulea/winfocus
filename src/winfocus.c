@@ -59,6 +59,7 @@ typedef struct {
     DWORD           pid;
     char            className[256];
     WINDOWPLACEMENT placement;  /* 表示状態（最大化・最小化含む）と通常時の矩形 */
+    BOOL            isTopmost;  /* WS_EX_TOPMOST フラグ（Z オーダー復元用） */
 } WindowEntry;
 
 /* 保存フェーズの EnumWindows コールバックコンテキスト */
@@ -228,6 +229,7 @@ static BOOL CALLBACK save_callback(HWND hwnd, LPARAM lParam)
     strncpy_s(e->className, sizeof(e->className), className, _TRUNCATE);
     e->placement.length = sizeof(WINDOWPLACEMENT);
     GetWindowPlacement(hwnd, &e->placement);
+    e->isTopmost = (GetWindowLong(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
 
     ctx->count++;
     return TRUE;
@@ -456,7 +458,9 @@ static void restore_positions(void)
     }
     fclose(fp);
 
-    for (int i = 0; i < count; i++) {
+    /* 背面→前面の順に復元して Z オーダーを再現する
+     * EnumWindows は前面→背面の順で列挙するため、逆順で処理する */
+    for (int i = count - 1; i >= 0; i--) {
         WindowEntry *e = &entries[i];
 
         /* HWND の有効性と同一ウィンドウ検証（PID + クラス名） */
@@ -495,6 +499,14 @@ static void restore_positions(void)
             SetWindowPlacement(e->hwnd, &e->placement);
             correct_offscreen(e->hwnd);
         }
+
+        /* Z オーダーの復元（ベストエフォート）
+         * TOPMOST ウィンドウは HWND_TOPMOST、それ以外は HWND_TOP で前面寄せする。
+         * 逆順ループとの組み合わせにより保存時の重なり順をおおよそ再現する。 */
+        HWND insertAfter = e->isTopmost ? HWND_TOPMOST : HWND_TOP;
+        SetWindowPos(e->hwnd, insertAfter, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
         Sleep(5);
     }
 
