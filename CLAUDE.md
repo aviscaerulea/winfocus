@@ -25,9 +25,12 @@ DisplayFusion によるウィンドウ再配置の前処理として使用する
 ```
 winfocus/
 ├── src/
-│   └── winfocus.c   // メインソース
-├── winfocus.toml    // 設定ファイル（exe と同じディレクトリに配置）
-└── build.ps1        // ビルドスクリプト（DevShell モジュール経由）
+│   └── winfocus.c           // メインソース
+├── scripts/
+│   ├── winfocus-save.vbs    // タスクスケジューラ用 --save ラッパー
+│   └── winfocus-restore.vbs // タスクスケジューラ用 --restore ラッパー
+├── winfocus.toml            // 設定ファイル（exe と同じディレクトリに配置）
+└── build.ps1                // ビルドスクリプト（DevShell モジュール経由）
 ```
 
 ### 動作仕様
@@ -50,9 +53,10 @@ winfocus/
 
 - 保存先：`%TEMP%\winfocus_positions.dat`（バイナリ形式）
 - 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（位置 + 最小化・最大化状態）
-- 条件付き保存：最終入力時刻（`GetLastInputInfo`）が保存ファイル更新日時 + 1 分より新しい場合のみ保存を実行する
+- 条件付き保存：最終入力（`GetLastInputInfo`）からのアイドル時間が設定値（デフォルト 10 分）未満の場合のみ保存を実行する
+- 画面外補正：`--restore` で復元後にウィンドウが全モニタ範囲外にある場合、プライマリモニタ作業領域に移動する
+- stale 判定：`--restore` 時に保存ファイルの更新日時がシステム起動時刻より古い場合、前回ブートのデータとして削除して終了する
 - 復元時の照合：HWND の有効性 + PID + クラス名の 3 条件を検証
-- 同一セッション内での復元を前提とする
 - F11 全画面状態は保存のみで復元対象外
 
 #### 対象ウィンドウ
@@ -77,7 +81,15 @@ classes = ["SystemMetersWnd"]
 ```
 
 `WS_EX_TOOLWINDOW` スタイルを持つウィンドウのうち、`classes` に列挙したクラス名のウィンドウは処理対象とする。
-ファイルが存在しない場合はホワイトリストなしで動作する。
+
+```toml
+[save]
+idle_timeout = 10
+```
+
+`--save` のアイドルタイムアウト（分単位）。最終入力からこの時間以上経過している場合は保存をスキップする。デフォルト 10 分。
+
+ファイルが存在しない場合はデフォルト値で動作する。
 
 #### ウィンドウ処理（全対象に一様に適用）
 
@@ -129,7 +141,9 @@ task build
 - `GetModuleFileNameA` - 設定ファイルパスの組み立て
 - `DeleteFileA` - 復元完了後の保存ファイル削除
 - `GetLastInputInfo` - 最終入力時刻取得（条件付き保存の判定用）
-- `GetFileAttributesExA` - 保存ファイルの更新日時取得（条件付き保存の判定用）
+- `GetFileAttributesExA` - 保存ファイルの更新日時取得（stale 判定用）
+- `GetSystemTimeAsFileTime` - 現在時刻取得（stale 判定でブート時刻算出に使用）
+- `GetTickCount64` - システム起動からの経過ミリ秒取得（stale 判定用）
 
 ## 参考
 

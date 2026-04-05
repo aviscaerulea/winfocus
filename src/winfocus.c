@@ -42,6 +42,17 @@ static const char SAVE_FILE_NAME[] = "winfocus_positions.dat";
 static char g_whitelist[MAX_WHITELIST_ENTRIES][256];  /* ホワイトリストのクラス名 */
 static int  g_whitelist_count = 0;                    /* ホワイトリストの登録数 */
 
+/* --save のアイドルタイムアウト（ミリ秒）
+ *
+ * 最終マウス・キーボード操作からこの時間以上経過している場合、--save をスキップする。
+ * winfocus.toml の [save] セクション idle_timeout（分単位）で変更可能。 */
+static DWORD g_save_idle_timeout_ms = 600000;  /* デフォルト: 10 分 */
+
+/* load_config で使用するセクション識別子 */
+#define SECTION_NONE          0
+#define SECTION_TOOLWINDOW_WL 1
+#define SECTION_SAVE          2
+
 /* 保存するウィンドウ情報 */
 typedef struct {
     HWND            hwnd;
@@ -287,38 +298,56 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
 /*
  * 保存が必要か判定
  *
- * 保存ファイルの更新日時 + 1 分と最終入力時刻を比較し、
- * 保存後 1 分以上経過してからユーザ操作があった場合のみ TRUE を返す。
- * 保存ファイルが存在しない場合や API 取得失敗時は安全側（TRUE）を返す。
+ * 最終マウス・キーボード入力からのアイドル時間が g_save_idle_timeout_ms 未満なら TRUE を返す。
+ * GetLastInputInfo 取得失敗時は安全側（TRUE）を返す。
  */
-static BOOL should_save(const char *savePath)
+static BOOL should_save(void)
 {
-    WIN32_FILE_ATTRIBUTE_DATA fileInfo;
-    if (!GetFileAttributesExA(savePath, GetFileExInfoStandard, &fileInfo)) {
-        return TRUE;
-    }
-
     LASTINPUTINFO lii = { sizeof(LASTINPUTINFO) };
     if (!GetLastInputInfo(&lii)) {
         return TRUE;
     }
-
-    /* 最終入力からの経過ミリ秒を FILETIME（100ns 単位）に変換して最終入力時刻を算出 */
     DWORD idleMs = GetTickCount() - lii.dwTime;
+    return idleMs < g_save_idle_timeout_ms;
+}
+
+/* ブート時刻判定の許容誤差（FILETIME 単位：100ns × 2000 万 = 2 秒） */
+#define BOOT_TIME_TOLERANCE 20000000ULL
+
+/*
+ * 保存ファイルが前回ブートのものか判定する
+ *
+ * ファイルの更新日時がシステム起動時刻より古い場合 TRUE を返す。
+ * 起動時刻は GetSystemTimeAsFileTime() - GetTickCount64() で算出する。
+ * 判定失敗時は FALSE（非 stale）を返し、復元を試みる安全側に倒す。
+ */
+static BOOL is_save_file_stale(const char *path)
+{
+    WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fileInfo)) {
+        return FALSE;
+    }
+
     FILETIME ftNow;
     GetSystemTimeAsFileTime(&ftNow);
+    ULONGLONG uptimeMs = GetTickCount64();
+
+    /* 現在時刻からアップタイムを引いてブート時刻を算出 */
     ULARGE_INTEGER now;
-    now.LowPart = ftNow.dwLowDateTime;
+    now.LowPart  = ftNow.dwLowDateTime;
     now.HighPart = ftNow.dwHighDateTime;
-    ULARGE_INTEGER lastInput;
-    lastInput.QuadPart = now.QuadPart - (ULONGLONG)idleMs * 10000ULL;
+    ULONGLONG bootTime = now.QuadPart - uptimeMs * 10000ULL;
 
-    ULARGE_INTEGER fileTime;
-    fileTime.LowPart = fileInfo.ftLastWriteTime.dwLowDateTime;
-    fileTime.HighPart = fileInfo.ftLastWriteTime.dwHighDateTime;
+    /* 許容誤差を適用 */
+    if (bootTime > BOOT_TIME_TOLERANCE) {
+        bootTime -= BOOT_TIME_TOLERANCE;
+    }
 
-    /* 1 分のマージンを設けて保存直後の再保存を防ぐ */
-    return lastInput.QuadPart > fileTime.QuadPart + 600000000ULL;
+    ULARGE_INTEGER fileMtime;
+    fileMtime.LowPart  = fileInfo.ftLastWriteTime.dwLowDateTime;
+    fileMtime.HighPart = fileInfo.ftLastWriteTime.dwHighDateTime;
+
+    return fileMtime.QuadPart < bootTime;
 }
 
 /*
@@ -332,8 +361,7 @@ static void save_positions(DWORD myPid)
     char savePath[MAX_PATH];
     BOOL hasSavePath = get_save_path(savePath, sizeof(savePath));
 
-    /* 最終入力がファイル更新日時以前なら配置変化なしとみなしてスキップ */
-    if (hasSavePath && !should_save(savePath)) {
+    if (!should_save()) {
         return;
     }
 
@@ -367,6 +395,25 @@ static void save_positions(DWORD myPid)
 }
 
 /*
+ * 画面外ウィンドウの補正
+ *
+ * SetWindowPlacement 後にウィンドウが全モニタの範囲外にある場合、
+ * プライマリモニタの作業領域左上に移動する。
+ */
+static void correct_offscreen(HWND hwnd)
+{
+    if (MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) != NULL) {
+        return;
+    }
+    RECT workArea;
+    if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0)) {
+        return;
+    }
+    SetWindowPos(hwnd, NULL, workArea.left, workArea.top, 0, 0,
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/*
  * 保存したウィンドウ配置を復元する
  *
  * HWND・PID・クラス名が一致するウィンドウに SetWindowPlacement で配置を戻す。
@@ -376,6 +423,12 @@ static void restore_positions(void)
 {
     char savePath[MAX_PATH];
     if (!get_save_path(savePath, sizeof(savePath))) {
+        return;
+    }
+
+    /* 前回ブートの保存ファイルは無効：削除して終了 */
+    if (is_save_file_stale(savePath)) {
+        DeleteFileA(savePath);
         return;
     }
 
@@ -434,11 +487,13 @@ static void restore_positions(void)
             WINDOWPLACEMENT wp = e->placement;
             wp.showCmd = SW_SHOWNORMAL;
             SetWindowPlacement(e->hwnd, &wp);
+            correct_offscreen(e->hwnd);
             Sleep(10);
             ShowWindow(e->hwnd, SW_MAXIMIZE);
         }
         else {
             SetWindowPlacement(e->hwnd, &e->placement);
+            correct_offscreen(e->hwnd);
         }
         Sleep(5);
     }
@@ -496,21 +551,29 @@ static void load_config(void)
 
         /* セクションヘッダ */
         if (line[0] == '[') {
-            in_section = (_stricmp(line, "[toolwindow_whitelist]") == 0);
+            if (_stricmp(line, "[toolwindow_whitelist]") == 0) {
+                in_section = SECTION_TOOLWINDOW_WL;
+            }
+            else if (_stricmp(line, "[save]") == 0) {
+                in_section = SECTION_SAVE;
+            }
+            else {
+                in_section = SECTION_NONE;
+            }
             continue;
         }
 
-        if (!in_section) {
+        if (in_section == SECTION_NONE) {
             continue;
         }
 
-        /* classes = ["...", "..."] の行を解析 */
+        /* key = value の分離 */
         char *eq = strchr(line, '=');
         if (eq == NULL) {
             continue;
         }
 
-        /* キー部分を末尾空白トリムして完全一致確認 */
+        /* キー部分を末尾空白トリムして取得 */
         char key[64] = {0};
         int keyLen = (int)(eq - line);
         while (keyLen > 0 && (line[keyLen - 1] == ' ' || line[keyLen - 1] == '\t')) {
@@ -520,36 +583,50 @@ static void load_config(void)
             continue;
         }
         strncpy_s(key, sizeof(key), line, keyLen);
-        if (_stricmp(key, "classes") != 0) {
-            continue;
+
+        /* 値部分の先頭空白をスキップ */
+        char *val = eq + 1;
+        while (*val == ' ' || *val == '\t') {
+            val++;
         }
 
-        char *p = eq + 1;
-        while (*p && g_whitelist_count < MAX_WHITELIST_ENTRIES) {
-            while (*p && *p != '"') {
-                p++;
-            }
-            if (*p == '\0') {
-                break;
-            }
-            p++;  /* 開きクォートをスキップ */
+        /* [toolwindow_whitelist] セクション */
+        if (in_section == SECTION_TOOLWINDOW_WL && _stricmp(key, "classes") == 0) {
+            char *p = val;
+            while (*p && g_whitelist_count < MAX_WHITELIST_ENTRIES) {
+                while (*p && *p != '"') {
+                    p++;
+                }
+                if (*p == '\0') {
+                    break;
+                }
+                p++;  /* 開きクォートをスキップ */
 
-            char *start = p;
-            while (*p && *p != '"') {
-                p++;
-            }
-            if (*p == '\0') {
-                break;
-            }
+                char *start = p;
+                while (*p && *p != '"') {
+                    p++;
+                }
+                if (*p == '\0') {
+                    break;
+                }
 
-            int entryLen = (int)(p - start);
-            if (entryLen > 0 && entryLen < 256) {
-                strncpy_s(g_whitelist[g_whitelist_count],
-                          sizeof(g_whitelist[g_whitelist_count]),
-                          start, entryLen);
-                g_whitelist_count++;
+                int entryLen = (int)(p - start);
+                if (entryLen > 0 && entryLen < 256) {
+                    strncpy_s(g_whitelist[g_whitelist_count],
+                              sizeof(g_whitelist[g_whitelist_count]),
+                              start, entryLen);
+                    g_whitelist_count++;
+                }
+                p++;  /* 閉じクォートをスキップ */
             }
-            p++;  /* 閉じクォートをスキップ */
+        }
+
+        /* [save] セクション */
+        if (in_section == SECTION_SAVE && _stricmp(key, "idle_timeout") == 0) {
+            int minutes = atoi(val);
+            if (minutes > 0) {
+                g_save_idle_timeout_ms = (DWORD)minutes * 60000;
+            }
         }
     }
 
