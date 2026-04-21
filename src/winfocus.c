@@ -29,8 +29,8 @@ static const char *EXCLUDED_CLASSES[] = {
     NULL
 };
 
-/* 保存ファイル名（TEMP ディレクトリに配置） */
-static const char SAVE_FILE_NAME[] = "winfocus_positions.dat";
+/* 保存ファイル名（exe と同じディレクトリに配置） */
+static const char SAVE_FILE_NAME[] = "winfocus.dat";
 
 /*
  * WS_EX_TOOLWINDOW を持つウィンドウのうち処理対象にするクラス名（設定ファイルから読み込む）
@@ -42,24 +42,13 @@ static const char SAVE_FILE_NAME[] = "winfocus_positions.dat";
 static char g_whitelist[MAX_WHITELIST_ENTRIES][256];  /* ホワイトリストのクラス名 */
 static int  g_whitelist_count = 0;                    /* ホワイトリストの登録数 */
 
-/* --save のアイドルタイムアウト（ミリ秒）
- *
- * 最終マウス・キーボード操作からこの時間以上経過している場合、--save をスキップする。
- * winfocus.toml の [save] セクション idle_timeout（分単位）で変更可能。 */
-static DWORD g_save_idle_timeout_ms = 600000;  /* デフォルト: 10 分 */
-
 /* load_config で使用するセクション識別子 */
 #define SECTION_NONE          0
 #define SECTION_TOOLWINDOW_WL 1
-#define SECTION_SAVE          2
 
 /* 復元時に受け入れるエントリ数の上限
  * 保存ファイルの破損や異常データに対する安全策。通常の使用では数十～数百エントリ程度。 */
 #define MAX_RESTORE_ENTRIES 10000
-
-/* idle_timeout の上限値（分）
- * DWORD 演算のオーバーフローを防ぐ。24 時間を超えるタイムアウトは想定しない。 */
-#define MAX_IDLE_TIMEOUT_MINUTES 1440
 
 /* 保存するウィンドウ情報 */
 typedef struct {
@@ -321,28 +310,6 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
     return TRUE;
 }
 
-/*
- * 保存が必要か判定
- *
- * 最終マウス・キーボード入力からのアイドル時間が g_save_idle_timeout_ms 未満なら TRUE を返す。
- * GetLastInputInfo 取得失敗時は安全側（TRUE）を返す。
- */
-static BOOL should_save(void)
-{
-    /* タイムアウト無効（idle_timeout = 0）なら常に保存する */
-    if (g_save_idle_timeout_ms == 0) {
-        return TRUE;
-    }
-
-    LASTINPUTINFO lii = { sizeof(LASTINPUTINFO) };
-    if (!GetLastInputInfo(&lii)) {
-        return TRUE;
-    }
-    /* LASTINPUTINFO.dwTime は GetTickCount ベースのため DWORD 演算で統一 */
-    DWORD idleMs = GetTickCount() - lii.dwTime;
-    return idleMs < g_save_idle_timeout_ms;
-}
-
 /* ブート時刻判定の許容誤差（FILETIME 単位：100ns × 2000 万 = 2 秒） */
 #define BOOT_TIME_TOLERANCE 20000000ULL
 
@@ -385,18 +352,12 @@ static BOOL is_save_file_stale(const char *path)
 /*
  * ウィンドウ配置を保存する
  *
- * 保存先：exe と同じディレクトリの winfocus_positions.dat
- * フォーマット：エントリ数（int）+ WindowEntry 配列
- * force が TRUE の場合はアイドル判定をバイパスする（引数なし実行用）。
+ * 保存先：exe と同じディレクトリの winfocus.dat
  */
-static void save_positions(DWORD myPid, BOOL force)
+static void save_positions(DWORD myPid)
 {
     char savePath[MAX_PATH];
     if (!get_save_path(savePath, sizeof(savePath))) {
-        return;
-    }
-
-    if (!force && !should_save()) {
         return;
     }
 
@@ -590,9 +551,6 @@ static void load_config(void)
             if (_stricmp(line, "[toolwindow_whitelist]") == 0) {
                 in_section = SECTION_TOOLWINDOW_WL;
             }
-            else if (_stricmp(line, "[save]") == 0) {
-                in_section = SECTION_SAVE;
-            }
             else {
                 in_section = SECTION_NONE;
             }
@@ -657,17 +615,6 @@ static void load_config(void)
             }
         }
 
-        /* [save] セクション */
-        if (in_section == SECTION_SAVE && _stricmp(key, "idle_timeout") == 0) {
-            /* 数字で始まる値のみ受け付ける（atoi の非数値→0 誤認を防ぐ）
-             * 0 はタイムアウト無効（常に保存する）。上限は MAX_IDLE_TIMEOUT_MINUTES。 */
-            if (*val >= '0' && *val <= '9') {
-                int minutes = atoi(val);
-                if (minutes >= 0 && minutes <= MAX_IDLE_TIMEOUT_MINUTES) {
-                    g_save_idle_timeout_ms = (DWORD)minutes * 60000;
-                }
-            }
-        }
     }
 
     fclose(fp);
@@ -687,12 +634,12 @@ int main(int argc, char *argv[])
     DWORD myPid = GetCurrentProcessId();
 
     if (arg1 && _stricmp(arg1, "--save") == 0) {
-        save_positions(myPid, FALSE);
+        save_positions(myPid);
         return 0;
     }
 
-    /* 移動前にウィンドウ配置を保存（引数なし実行はアイドル判定をバイパス） */
-    save_positions(myPid, TRUE);
+    /* 移動前にウィンドウ配置を保存 */
+    save_positions(myPid);
 
     MoveContext ctx;
     memset(&ctx, 0, sizeof(ctx));

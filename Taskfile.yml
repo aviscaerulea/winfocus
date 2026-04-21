@@ -23,7 +23,7 @@ tasks:
     desc: ビルド（out/winfocus.exe）
     cmds:
       - pwsh -NonInteractive -File build.ps1
-      - cmd: pwsh.exe -NoProfile -Command "Copy-Item '{{.APP_NAME}}.toml','scripts/winfocus-save.vbs','scripts/winfocus-restore.vbs' 'out/'"
+      - cmd: pwsh.exe -NoProfile -Command "Copy-Item '{{.APP_NAME}}.toml' 'out/'"
     sources:
       - src/winfocus.c
     generates:
@@ -34,7 +34,7 @@ tasks:
     cmds:
       - task: clean
       - task: build
-      - cmd: pwsh.exe -NoProfile -Command "Compress-Archive -Path 'out/{{.APP_NAME}}.exe','out/{{.APP_NAME}}.toml','out/winfocus-save.vbs','out/winfocus-restore.vbs' -DestinationPath 'out/{{.APP_NAME}}-v{{.VERSION}}-{{.ARCH}}.zip' -Force"
+      - cmd: pwsh.exe -NoProfile -Command "Compress-Archive -Path 'out/{{.APP_NAME}}.exe','out/{{.APP_NAME}}.toml' -DestinationPath 'out/{{.APP_NAME}}-v{{.VERSION}}-{{.ARCH}}.zip' -Force"
       - cmd: echo "Package out/{{.APP_NAME}}-v{{.VERSION}}-{{.ARCH}}.zip"
 
   rebuild:

@@ -8,7 +8,7 @@
 # ==================================================
 # winfocus 保存ファイルダンプ
 #
-# out\winfocus_positions.dat の内容を人間が読める形式で出力する。
+# out\winfocus.dat の内容を人間が読める形式で出力する。
 # winfocus --save 後にこのスクリプトを実行して保存内容を確認する。
 #
 # WindowEntry 構造体レイアウト（x64 MSVC）:
@@ -73,7 +73,7 @@ def get_window_title(hwnd):
 
 def main():
     # out\ はビルド出力ディレクトリ（winfocus.exe と同じ場所）
-    path = Path(__file__).parent.parent / "out" / "winfocus_positions.dat"
+    path = Path(__file__).parent.parent / "out" / "winfocus.dat"
 
     if not path.exists():
         print(f"保存ファイルが見つからない: {path}")
