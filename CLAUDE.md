@@ -51,13 +51,13 @@ winfocus/
 
 #### ウィンドウ配置の保存・復元
 
-- 保存先：`%TEMP%\winfocus_positions.dat`（バイナリ形式）
+- 保存先：exe と同じディレクトリの `winfocus_positions.dat`（バイナリ形式）
 - 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（位置 + 最小化・最大化状態）・`WS_EX_TOPMOST` フラグ
-- 条件付き保存：最終入力（`GetLastInputInfo`）からのアイドル時間が設定値（デフォルト 10 分）未満の場合のみ保存を実行する
+- 条件付き保存：`--save` 実行時のみ適用。最終入力（`GetLastInputInfo`）からのアイドル時間が設定値（デフォルト 10 分）未満の場合のみ保存を実行する。引数なし実行はアイドル判定をバイパスし常に保存する
 - 画面外補正：`--restore` で復元後にウィンドウが全モニタ範囲外にある場合、プライマリモニタ作業領域に移動する
 - stale 判定：`--restore` 時に保存ファイルの更新日時がシステム起動時刻より古い場合、前回ブートのデータとして削除して終了する
 - 復元時の照合：HWND の有効性 + PID + クラス名の 3 条件を検証
-- Z オーダーの復元：`--restore` 時にベストエフォートで重なり順を再現する（`EnumWindows` の列挙順を逆順に `SetWindowPos` で適用。OS 制約により完全保証はできない）
+- Z オーダーの復元：`--restore` 時にベストエフォートで重なり順を再現する（`EnumWindows` の列挙順を逆順に `SetWindowPos` で適用。OS 制約により完全保証はできない）。副作用として、保存後に新たに開いたウィンドウが保存対象ウィンドウの背面に移動する
 - F11 全画面状態は保存のみで復元対象外
 
 #### 対象ウィンドウ
@@ -138,8 +138,7 @@ task build
 - `GetWindowThreadProcessId` / `GetCurrentProcessId` - プロセス判定
 - `GetWindowPlacement` / `SetWindowPlacement` - 配置情報（位置・表示状態）の取得・復元
 - `IsWindow` - HWND 有効性検証（復元時）
-- `GetTempPathA` - 保存ファイルパスの組み立て
-- `GetModuleFileNameA` - 設定ファイルパスの組み立て
+- `GetModuleFileNameA` - 設定ファイル・保存ファイルパスの組み立て
 - `DeleteFileA` - 復元完了後の保存ファイル削除
 - `GetLastInputInfo` - 最終入力時刻取得（条件付き保存の判定用）
 - `GetFileAttributesExA` - 保存ファイルの更新日時取得（stale 判定用）

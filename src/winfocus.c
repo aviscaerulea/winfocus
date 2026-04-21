@@ -53,6 +53,14 @@ static DWORD g_save_idle_timeout_ms = 600000;  /* デフォルト: 10 分 */
 #define SECTION_TOOLWINDOW_WL 1
 #define SECTION_SAVE          2
 
+/* 復元時に受け入れるエントリ数の上限
+ * 保存ファイルの破損や異常データに対する安全策。通常の使用では数十～数百エントリ程度。 */
+#define MAX_RESTORE_ENTRIES 10000
+
+/* idle_timeout の上限値（分）
+ * DWORD 演算のオーバーフローを防ぐ。24 時間を超えるタイムアウトは想定しない。 */
+#define MAX_IDLE_TIMEOUT_MINUTES 1440
+
 /* 保存するウィンドウ情報 */
 typedef struct {
     HWND            hwnd;
@@ -187,15 +195,32 @@ static BOOL is_fullscreen(HWND hwnd)
 }
 
 /*
+ * exe が置かれているディレクトリを取得する（末尾に \ を含む）
+ */
+static BOOL get_exe_dir(char *buf, DWORD bufSize)
+{
+    DWORD len = GetModuleFileNameA(NULL, buf, bufSize);
+    if (len == 0 || len >= bufSize) {
+        return FALSE;
+    }
+    char *lastSlash = strrchr(buf, '\\');
+    if (lastSlash == NULL) {
+        return FALSE;
+    }
+    lastSlash[1] = '\0';
+    return TRUE;
+}
+
+/*
  * 保存ファイルのパスを組み立てる
  */
 static BOOL get_save_path(char *buf, DWORD bufSize)
 {
-    char tempDir[MAX_PATH];
-    if (GetTempPathA(sizeof(tempDir), tempDir) == 0) {
+    char exeDir[MAX_PATH];
+    if (!get_exe_dir(exeDir, sizeof(exeDir))) {
         return FALSE;
     }
-    int written = snprintf(buf, bufSize, "%s%s", tempDir, SAVE_FILE_NAME);
+    int written = snprintf(buf, bufSize, "%s%s", exeDir, SAVE_FILE_NAME);
     return written > 0 && (DWORD)written < bufSize;
 }
 
@@ -217,7 +242,8 @@ static BOOL CALLBACK save_callback(HWND hwnd, LPARAM lParam)
         int newCap = ctx->capacity == 0 ? 64 : ctx->capacity * 2;
         WindowEntry *newBuf = (WindowEntry *)realloc(ctx->entries, newCap * sizeof(WindowEntry));
         if (newBuf == NULL) {
-            return TRUE;
+            ctx->count = 0;  /* 部分データを破棄して保存をスキップさせる */
+            return FALSE;
         }
         ctx->entries  = newBuf;
         ctx->capacity = newCap;
@@ -228,7 +254,9 @@ static BOOL CALLBACK save_callback(HWND hwnd, LPARAM lParam)
     GetWindowThreadProcessId(hwnd, &e->pid);
     strncpy_s(e->className, sizeof(e->className), className, _TRUNCATE);
     e->placement.length = sizeof(WINDOWPLACEMENT);
-    GetWindowPlacement(hwnd, &e->placement);
+    if (!GetWindowPlacement(hwnd, &e->placement)) {
+        return TRUE;  /* 取得失敗（ウィンドウ破棄等）：このエントリをスキップ */
+    }
     e->isTopmost = (GetWindowLong(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
 
     ctx->count++;
@@ -250,13 +278,9 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
 
     BOOL iconic = IsIconic(hwnd);
 
-    /* 最小化かつプライマリモニタ上なら移動不要（最小化状態を維持して終了）
-     * rcNormalPosition はワークエリア相対座標のため MonitorFromRect では正しく判定できず、
-     * MonitorFromWindow を内部で使用する is_on_primary で判定する。 */
-    if (iconic && is_on_primary(hwnd)) {
-        return TRUE;
-    }
-
+    /* 最小化・最大化ウィンドウは通常サイズに復元してからモニタ判定を行う。
+     * 最小化ウィンドウは (-32000, -32000) に配置されるため、MonitorFromWindow が
+     * 最寄りモニタを返し、プライマリモニタとの判定が不正確になりうる。 */
     if (iconic || IsZoomed(hwnd)) {
         ShowWindow(hwnd, SW_RESTORE);
         Sleep(10);  /* 復元完了待ち */
@@ -305,10 +329,16 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
  */
 static BOOL should_save(void)
 {
+    /* タイムアウト無効（idle_timeout = 0）なら常に保存する */
+    if (g_save_idle_timeout_ms == 0) {
+        return TRUE;
+    }
+
     LASTINPUTINFO lii = { sizeof(LASTINPUTINFO) };
     if (!GetLastInputInfo(&lii)) {
         return TRUE;
     }
+    /* LASTINPUTINFO.dwTime は GetTickCount ベースのため DWORD 演算で統一 */
     DWORD idleMs = GetTickCount() - lii.dwTime;
     return idleMs < g_save_idle_timeout_ms;
 }
@@ -355,15 +385,18 @@ static BOOL is_save_file_stale(const char *path)
 /*
  * ウィンドウ配置を保存する
  *
- * 保存先：%TEMP%\winfocus_positions.dat
+ * 保存先：exe と同じディレクトリの winfocus_positions.dat
  * フォーマット：エントリ数（int）+ WindowEntry 配列
+ * force が TRUE の場合はアイドル判定をバイパスする（引数なし実行用）。
  */
-static void save_positions(DWORD myPid)
+static void save_positions(DWORD myPid, BOOL force)
 {
     char savePath[MAX_PATH];
-    BOOL hasSavePath = get_save_path(savePath, sizeof(savePath));
+    if (!get_save_path(savePath, sizeof(savePath))) {
+        return;
+    }
 
-    if (!should_save()) {
+    if (!force && !should_save()) {
         return;
     }
 
@@ -374,21 +407,19 @@ static void save_positions(DWORD myPid)
     EnumWindows(save_callback, (LPARAM)&ctx);
 
     if (ctx.count > 0) {
-        if (hasSavePath) {
-            FILE *fp = fopen(savePath, "wb");
-            if (fp != NULL) {
-                /* 書き込み失敗（ディスクフル等）時は不完全ファイルを削除 */
-                BOOL ok = (fwrite(&ctx.count, sizeof(int), 1, fp) == 1) &&
-                          ((size_t)fwrite(ctx.entries, sizeof(WindowEntry), ctx.count, fp) ==
-                           (size_t)ctx.count);
-                fclose(fp);
-                if (!ok) {
-                    DeleteFileA(savePath);
-                }
+        FILE *fp = fopen(savePath, "wb");
+        if (fp != NULL) {
+            /* 書き込み失敗（ディスクフル等）時は不完全ファイルを削除 */
+            BOOL ok = (fwrite(&ctx.count, sizeof(int), 1, fp) == 1) &&
+                      ((size_t)fwrite(ctx.entries, sizeof(WindowEntry), ctx.count, fp) ==
+                       (size_t)ctx.count);
+            fclose(fp);
+            if (!ok) {
+                DeleteFileA(savePath);
             }
         }
     }
-    else if (hasSavePath) {
+    else {
         /* 対象ウィンドウなし：古い保存ファイルが残っていれば削除 */
         DeleteFileA(savePath);
     }
@@ -440,7 +471,7 @@ static void restore_positions(void)
     }
 
     int count = 0;
-    if (fread(&count, sizeof(int), 1, fp) != 1 || count <= 0 || count > 10000) {
+    if (fread(&count, sizeof(int), 1, fp) != 1 || count <= 0 || count > MAX_RESTORE_ENTRIES) {
         fclose(fp);
         return;
     }
@@ -451,7 +482,7 @@ static void restore_positions(void)
         return;
     }
 
-    if ((int)fread(entries, sizeof(WindowEntry), count, fp) != count) {
+    if (fread(entries, sizeof(WindowEntry), count, fp) != (size_t)count) {
         free(entries);
         fclose(fp);
         return;
@@ -523,20 +554,13 @@ static void restore_positions(void)
  */
 static void load_config(void)
 {
-    char exePath[MAX_PATH] = {0};
-    DWORD fileNameLen = GetModuleFileNameA(NULL, exePath, sizeof(exePath));
-    if (fileNameLen == 0 || fileNameLen >= sizeof(exePath)) {
+    char exeDir[MAX_PATH];
+    if (!get_exe_dir(exeDir, sizeof(exeDir))) {
         return;
     }
-
-    char *lastSlash = strrchr(exePath, '\\');
-    if (lastSlash == NULL) {
-        return;
-    }
-    *(lastSlash + 1) = '\0';
 
     char configPath[MAX_PATH];
-    int written = snprintf(configPath, sizeof(configPath), "%swinfocus.toml", exePath);
+    int written = snprintf(configPath, sizeof(configPath), "%swinfocus.toml", exeDir);
     if (written <= 0 || (DWORD)written >= sizeof(configPath)) {
         return;
     }
@@ -635,9 +659,13 @@ static void load_config(void)
 
         /* [save] セクション */
         if (in_section == SECTION_SAVE && _stricmp(key, "idle_timeout") == 0) {
-            int minutes = atoi(val);
-            if (minutes > 0) {
-                g_save_idle_timeout_ms = (DWORD)minutes * 60000;
+            /* 数字で始まる値のみ受け付ける（atoi の非数値→0 誤認を防ぐ）
+             * 0 はタイムアウト無効（常に保存する）。上限は MAX_IDLE_TIMEOUT_MINUTES。 */
+            if (*val >= '0' && *val <= '9') {
+                int minutes = atoi(val);
+                if (minutes >= 0 && minutes <= MAX_IDLE_TIMEOUT_MINUTES) {
+                    g_save_idle_timeout_ms = (DWORD)minutes * 60000;
+                }
             }
         }
     }
@@ -659,12 +687,12 @@ int main(int argc, char *argv[])
     DWORD myPid = GetCurrentProcessId();
 
     if (arg1 && _stricmp(arg1, "--save") == 0) {
-        save_positions(myPid);
+        save_positions(myPid, FALSE);
         return 0;
     }
 
-    /* 移動前にウィンドウ配置を保存 */
-    save_positions(myPid);
+    /* 移動前にウィンドウ配置を保存（引数なし実行はアイドル判定をバイパス） */
+    save_positions(myPid, TRUE);
 
     MoveContext ctx;
     memset(&ctx, 0, sizeof(ctx));
