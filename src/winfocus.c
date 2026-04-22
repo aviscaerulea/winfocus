@@ -638,6 +638,10 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    if (arg1) {
+        return 0;
+    }
+
     /* 移動前にウィンドウ配置を保存 */
     save_positions(myPid);
 
