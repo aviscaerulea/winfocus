@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 /* 除外するシステムウィンドウのクラス名 */
 static const char *EXCLUDED_CLASSES[] = {
@@ -320,8 +321,13 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
     return TRUE;
 }
 
-/* ブート時刻判定の許容誤差（FILETIME 単位：100ns × 2000 万 = 2 秒） */
-#define BOOT_TIME_TOLERANCE 20000000ULL
+/* FILETIME の単位換算
+ * FILETIME は 100ns 単位のカウンタ */
+#define FILETIME_UNITS_PER_MS  10000ULL    /* 1 ミリ秒 = 10,000 × 100ns */
+#define FILETIME_UNITS_PER_SEC 10000000ULL /* 1 秒 = 10,000,000 × 100ns */
+
+/* ブート時刻判定の許容誤差（FILETIME 単位：2 秒） */
+#define BOOT_TIME_TOLERANCE (2ULL * FILETIME_UNITS_PER_SEC)
 
 /*
  * 保存ファイルが前回ブートのものか判定する
@@ -345,7 +351,7 @@ static BOOL is_save_file_stale(const char *path)
     ULARGE_INTEGER now;
     now.LowPart  = ftNow.dwLowDateTime;
     now.HighPart = ftNow.dwHighDateTime;
-    ULONGLONG bootTime = now.QuadPart - uptimeMs * 10000ULL;
+    ULONGLONG bootTime = now.QuadPart - uptimeMs * FILETIME_UNITS_PER_MS;
 
     /* 許容誤差を適用 */
     if (bootTime > BOOT_TIME_TOLERANCE) {
@@ -452,9 +458,9 @@ static BOOL is_save_file_expired(const char *path)
         return FALSE;
     }
 
-    /* 経過時間（100ns 単位）と有効期限（時間 × 3600 秒 × 10,000,000）を比較 */
+    /* 経過時間（100ns 単位）と有効期限（時間 × 3600 秒 × FILETIME_UNITS_PER_SEC）を比較 */
     ULONGLONG elapsed     = now.QuadPart - fileMtime.QuadPart;
-    ULONGLONG expiry100ns = (ULONGLONG)g_save_file_expiry_hours * 3600ULL * 10000000ULL;
+    ULONGLONG expiry100ns = (ULONGLONG)g_save_file_expiry_hours * 3600ULL * FILETIME_UNITS_PER_SEC;
 
     return elapsed > expiry100ns;
 }
@@ -464,7 +470,8 @@ static BOOL is_save_file_expired(const char *path)
  *
  * HWND・PID・クラス名が一致するウィンドウに SetWindowPlacement で配置を戻す。
  * 正常な復元ではファイルを削除しないため、何度でも復元できる。
- * ただし stale 判定（前回ブートのデータ）の場合は削除して終了する。
+ * stale 判定（前回ブートのデータ）の場合は削除して終了する。
+ * 有効期限切れの場合は削除せず、ファイル不在として扱って終了する。
  */
 static void restore_positions(void)
 {
@@ -566,9 +573,10 @@ static void restore_positions(void)
 /*
  * 設定ファイル（winfocus.toml）を読み込む
  *
- * exe と同じディレクトリの winfocus.toml から [toolwindow_whitelist] セクションの
- * classes 配列を読み込んで g_whitelist に格納する。
- * ファイルが存在しない場合や読み込み失敗時はホワイトリストなしで動作する。
+ * exe と同じディレクトリの winfocus.toml から以下を読み込む。
+ *   [toolwindow_whitelist].classes → g_whitelist
+ *   [save_file].expiry_hours       → g_save_file_expiry_hours
+ * ファイルが存在しない場合や値が不正な場合は各デフォルト値で動作する。
  */
 static void load_config(void)
 {
@@ -676,11 +684,12 @@ static void load_config(void)
         }
 
         /* [save_file] セクション
-         * 0 は有効期限判定無効を意味する。非数値・負値はデフォルト値維持 */
+         * 0 は有効期限判定無効を意味する。
+         * 非数値・負値・末尾余剰文字・INT_MAX 超過はデフォルト値維持 */
         if (in_section == SECTION_SAVE_FILE && _stricmp(key, "expiry_hours") == 0) {
             char *endptr;
             long v = strtol(val, &endptr, 10);
-            if (endptr != val && v >= 0) {
+            if (endptr != val && *endptr == '\0' && v >= 0 && v <= INT_MAX) {
                 g_save_file_expiry_hours = (int)v;
             }
         }
