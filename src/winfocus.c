@@ -33,6 +33,10 @@ static const char *EXCLUDED_CLASSES[] = {
 /* 保存ファイル名（exe と同じディレクトリに配置） */
 static const char SAVE_FILE_NAME[] = "winfocus.dat";
 
+/* 保存ファイルのフォーマット識別子 */
+#define SAVE_FILE_MAGIC   0x57464353UL  /* "WFCS" = WinFocusSave */
+#define SAVE_FILE_VERSION 2             /* WindowEntry 構造体変更時にインクリメント */
+
 /*
  * WS_EX_TOOLWINDOW を持つウィンドウのうち処理対象にするクラス名（設定ファイルから読み込む）
  *
@@ -66,7 +70,8 @@ typedef struct {
     HWND            hwnd;
     DWORD           pid;
     char            className[256];
-    WINDOWPLACEMENT placement;  /* 表示状態（最大化・最小化含む）と通常時の矩形 */
+    WINDOWPLACEMENT placement;  /* showCmd の取得用（位置情報は rect を使う） */
+    RECT            rect;       /* GetWindowRect のスクリーン座標。SetWindowPos で復元 */
     BOOL            isTopmost;  /* WS_EX_TOPMOST フラグ（Z オーダー復元用） */
 } WindowEntry;
 
@@ -257,6 +262,12 @@ static BOOL CALLBACK save_callback(HWND hwnd, LPARAM lParam)
     if (!GetWindowPlacement(hwnd, &e->placement)) {
         return TRUE;  /* 取得失敗（ウィンドウ破棄等）：このエントリをスキップ */
     }
+    /* スクリーン座標を GetWindowRect で取得する。
+     * placement.rcNormalPosition（ワークスペース座標）は WM_NCCALCSIZE カスタム実装の
+     * アプリで SetWindowPlacement との非対称性が生じるため、復元には rect を使う。 */
+    if (!GetWindowRect(hwnd, &e->rect)) {
+        return TRUE;  /* 取得失敗（ウィンドウ破棄等）：このエントリをスキップ */
+    }
     e->isTopmost = (GetWindowLong(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
 
     ctx->count++;
@@ -312,7 +323,7 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
     }
 
     /* 移動後に最小化して積み重なりを解消する
-     * （--restore の SetWindowPlacement が安定して動作するよう状態をクリーンにする） */
+     * （--restore の SetWindowPos が安定して動作するよう状態をクリーンにする） */
     ShowWindow(hwnd, SW_MINIMIZE);
 
     /* メッセージキュー安定化のためのウェイト */
@@ -386,8 +397,12 @@ static void save_positions(DWORD myPid)
     if (ctx.count > 0) {
         FILE *fp = fopen(savePath, "wb");
         if (fp != NULL) {
+            DWORD magic   = SAVE_FILE_MAGIC;
+            DWORD version = SAVE_FILE_VERSION;
             /* 書き込み失敗（ディスクフル等）時は不完全ファイルを削除 */
-            BOOL ok = (fwrite(&ctx.count, sizeof(int), 1, fp) == 1) &&
+            BOOL ok = (fwrite(&magic,     sizeof(DWORD), 1, fp) == 1) &&
+                      (fwrite(&version,   sizeof(DWORD), 1, fp) == 1) &&
+                      (fwrite(&ctx.count, sizeof(int),   1, fp) == 1) &&
                       ((size_t)fwrite(ctx.entries, sizeof(WindowEntry), ctx.count, fp) ==
                        (size_t)ctx.count);
             fclose(fp);
@@ -407,7 +422,7 @@ static void save_positions(DWORD myPid)
 /*
  * 画面外ウィンドウの補正
  *
- * SetWindowPlacement 後にウィンドウが全モニタの範囲外にある場合、
+ * SetWindowPos 後にウィンドウが全モニタの範囲外にある場合、
  * プライマリモニタの作業領域左上に移動する。
  */
 static void correct_offscreen(HWND hwnd)
@@ -496,6 +511,18 @@ static void restore_positions(void)
         return;
     }
 
+    /* フォーマット検証：旧形式や破損ファイルは削除して終了する。
+     * 旧形式は WindowEntry のレイアウトが異なり正しく復元できないため、
+     * サイレント無視より削除して再保存を促す方が安全側に倒した動作となる。 */
+    DWORD magic = 0, version = 0;
+    if (fread(&magic,   sizeof(DWORD), 1, fp) != 1 ||
+        fread(&version, sizeof(DWORD), 1, fp) != 1 ||
+        magic != SAVE_FILE_MAGIC || version != SAVE_FILE_VERSION) {
+        fclose(fp);
+        DeleteFileA(savePath);
+        return;
+    }
+
     int count = 0;
     if (fread(&count, sizeof(int), 1, fp) != 1 || count <= 0 || count > MAX_RESTORE_ENTRIES) {
         fclose(fp);
@@ -539,21 +566,36 @@ static void restore_positions(void)
             continue;
         }
 
-        /* 位置・表示状態（最大化・最小化含む）を一括復元
+        /* 位置・表示状態（最大化・最小化含む）を復元する。
          *
-         * SW_SHOWMAXIMIZED はウィンドウが現在いるモニタで最大化するため、
-         * 先に通常表示で保存座標のモニタに移動してから最大化する 2 ステップで行う。
+         * 位置・サイズは SetWindowPlacement.rcNormalPosition（ワークスペース座標）ではなく
+         * 保存時の GetWindowRect（スクリーン座標）を SetWindowPos で適用する。
+         * カスタムタイトルバー（WM_NCCALCSIZE フック）を持つアプリ（WindowsTerminal 等）では
+         * placement のラウンドトリップが冪等にならないため、rect で位置精度を保証する。
          */
+        RECT *r = &e->rect;
+        int   w = r->right  - r->left;
+        int   h = r->bottom - r->top;
+
         if (e->placement.showCmd == SW_SHOWMAXIMIZED) {
-            WINDOWPLACEMENT wp = e->placement;
-            wp.showCmd = SW_SHOWNORMAL;
-            SetWindowPlacement(e->hwnd, &wp);
+            /* SW_SHOWMAXIMIZED：先に保存座標のモニタへ移動してから最大化する 2 ステップ */
+            SetWindowPos(e->hwnd, NULL, r->left, r->top, w, h,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
             correct_offscreen(e->hwnd);
             Sleep(10);
             ShowWindow(e->hwnd, SW_MAXIMIZE);
         }
-        else {
+        else if (e->placement.showCmd == SW_SHOWMINIMIZED ||
+                 e->placement.showCmd == SW_SHOWMINNOACTIVE) {
+            /* SW_SHOWMINIMIZED：最小化時の GetWindowRect は (-32000, -32000) のため
+             * rcNormalPosition（通常時位置）を SetWindowPlacement で復元してから最小化する */
             SetWindowPlacement(e->hwnd, &e->placement);
+            ShowWindow(e->hwnd, SW_MINIMIZE);
+        }
+        else {
+            /* SW_SHOWNORMAL 等：スクリーン座標で直接配置。冪等性を保証する */
+            SetWindowPos(e->hwnd, NULL, r->left, r->top, w, h,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
             correct_offscreen(e->hwnd);
         }
 

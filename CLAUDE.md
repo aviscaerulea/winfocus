@@ -51,8 +51,8 @@ winfocus/
 
 #### ウィンドウ配置の保存・復元
 
-- 保存先：exe と同じディレクトリの `winfocus.dat`（バイナリ形式）
-- 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（位置 + 最小化・最大化状態）・`WS_EX_TOPMOST` フラグ
+- 保存先：exe と同じディレクトリの `winfocus.dat`（バイナリ形式、先頭 8 byte にマジック `WFCS` + バージョン番号）
+- 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（表示状態取得用）・`GetWindowRect` のスクリーン座標・`WS_EX_TOPMOST` フラグ
 - `--save` および引数なし実行では、実行時点のウィンドウ配置を即座に保存する
 - 画面外補正：`--restore` で復元後にウィンドウが全モニタ範囲外にある場合、プライマリモニタ作業領域に移動する
 - 判定順序：`--restore` は以下の順に評価し、いずれかにヒットした時点で後続処理をスキップする
@@ -133,10 +133,11 @@ task build
 - `SendInput` - キー入力シミュレーション（F11 全画面解除用）
 - `MonitorFromWindow` - 所属モニタ判定
 - `GetMonitorInfo` - モニタ情報取得
-- `GetWindowRect` - ウィンドウ矩形取得（F11 全画面判定用）
+- `GetWindowRect` - ウィンドウ矩形取得（F11 全画面判定・保存時のスクリーン座標取得）
 - `SystemParametersInfo(SPI_GETWORKAREA)` - プライマリモニタ作業領域取得
 - `GetWindowThreadProcessId` / `GetCurrentProcessId` - プロセス判定
-- `GetWindowPlacement` / `SetWindowPlacement` - 配置情報（位置・表示状態）の取得・復元
+- `GetWindowPlacement` - 表示状態（showCmd：最大化・最小化・通常）の取得（位置は GetWindowRect を使う）
+- `SetWindowPlacement` - 不使用（削除済み）。GetWindowRect↔SetWindowPlacement のラウンドトリップがカスタムタイトルバーを持つアプリ（WindowsTerminal 等）で冪等にならない問題があるため SetWindowPos に統一
 - `IsWindow` - HWND 有効性検証（復元時）
 - `GetModuleFileNameA` - 設定ファイル・保存ファイルパスの組み立て
 - `DeleteFileA` - 前回ブート判定時の stale ファイル削除・保存失敗時の不完全ファイル削除
