@@ -2,39 +2,45 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
-
+    env:
+      TAG_NAME: ${{ github.event.release.tag_name }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # git describe でタグからバージョンを取得するため全履歴を取得
+      - uses: actions/checkout@v6.0.2
 
-      - uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-
-      - name: Build release package
-        run: task release
+      - name: Extract version from tag
         shell: pwsh
-
-      - name: Upload artifact to release
         run: |
-          $zip = Get-ChildItem out/*.zip | Select-Object -First 1
-          gh release upload $env:GITHUB_REF_NAME $zip.FullName --clobber
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
+          $version = $env:TAG_NAME -replace '^v', ''
+          echo "VERSION=$version" >> $env:GITHUB_ENV
 
-      - name: Trigger Scoop bucket update
-        run: gh workflow run excavator.yml --repo aviscaerulea/scoop-bucket
+      - name: Build (Release)
         shell: pwsh
+        run: pwsh -NoProfile -File build.ps1 -Version $env:VERSION -Config Release
+
+      - name: Copy assets
+        shell: pwsh
+        run: |
+          Copy-Item 'winfocus.toml' 'out/'
+
+      - name: Create zip package
+        shell: pwsh
+        run: |
+          $zipName = "winfocus-$env:TAG_NAME-x64.zip"
+          Compress-Archive -Path 'out/winfocus.exe','out/winfocus.toml' -DestinationPath "out/$zipName" -Force
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Upload release asset
+        shell: bash
+        run: gh release upload "$TAG_NAME" "out/$ZIP_NAME" --clobber
         env:
-          GH_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZIP_NAME: ${{ env.ZIP_NAME }}
