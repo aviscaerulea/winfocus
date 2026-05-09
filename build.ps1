@@ -60,6 +60,6 @@ $clArgs = $commonFlags + $configFlags + @("src\winfocus.c", "/Fe:$outExe", "/Fo:
           @("/link") + $linkFlags + $libs
 
 & cl.exe @clArgs
-if ($LASTEXITCODE -ne 0) { Write-Error "ビルド失敗 (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) { Write-Error "ビルド失敗（終了コード：$LASTEXITCODE）"; exit $LASTEXITCODE }
 
 Write-Host "Build succeeded: $outExe"

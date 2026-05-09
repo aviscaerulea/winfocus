@@ -56,9 +56,3 @@ tasks:
         -DestinationPath "out\{{.APP_NAME}}-v{{.VERSION}}-{{.ARCH}}.zip"
         -Force'
       - cmd: echo "Package out/{{.APP_NAME}}-v{{.VERSION}}-{{.ARCH}}.zip"
-
-  rebuild:
-    desc: 実行中のバイナリを停止してクリーンビルドする
-    cmds:
-      - task: clean
-      - task: build

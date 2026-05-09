@@ -101,6 +101,9 @@ expiry_hours = 24
 | セカンダリモニタ上 | `SetWindowPos()` でプライマリモニタ作業領域左上に移動（サイズ変更なし） |
 | プライマリモニタ上 | 移動なし（復元のみ） |
 | 各ウィンドウ間 | `Sleep(5)` で安定化 |
+| 上記処理後（全対象） | `ShowWindow(SW_MINIMIZE)` で最小化 |
+
+最終ステップで全対象ウィンドウを最小化する理由は、移動後の積み重なりを解消し、後続の `--restore` における `SetWindowPos` が安定して動作するよう状態をクリーンに揃えるためだ。
 
 #### 移動仕様
 
@@ -137,7 +140,7 @@ task build
 - `SystemParametersInfo(SPI_GETWORKAREA)` - プライマリモニタ作業領域取得
 - `GetWindowThreadProcessId` / `GetCurrentProcessId` - プロセス判定
 - `GetWindowPlacement` - 表示状態（showCmd：最大化・最小化・通常）の取得（位置は GetWindowRect を使う）
-- `SetWindowPlacement` - 不使用（削除済み）。GetWindowRect↔SetWindowPlacement のラウンドトリップがカスタムタイトルバーを持つアプリ（WindowsTerminal 等）で冪等にならない問題があるため SetWindowPos に統一
+- `SetWindowPlacement` - 最小化状態の通常時位置（rcNormalPosition）復元のみに使用。通常状態・最大化状態は GetWindowRect↔SetWindowPlacement のラウンドトリップがカスタムタイトルバーを持つアプリ（WindowsTerminal 等）で冪等にならないため SetWindowPos を使う
 - `IsWindow` - HWND 有効性検証（復元時）
 - `GetModuleFileNameA` - 設定ファイル・保存ファイルパスの組み立て
 - `DeleteFileA` - 前回ブート判定時の stale ファイル削除・保存失敗時の不完全ファイル削除

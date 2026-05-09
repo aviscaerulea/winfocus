@@ -91,7 +91,8 @@ def main():
 
     file_mtime = datetime.datetime.fromtimestamp(path.stat().st_mtime)
     mtime_str = file_mtime.strftime("%Y-%m-%d %H:%M:%S")
-    data = open(path, "rb").read()
+    with open(path, "rb") as f:
+        data = f.read()
 
     # ヘッダ検証
     if len(data) < 8:
