@@ -616,7 +616,7 @@ static void restore_positions(void)
              * 後続の手動復元時に位置がずれる。先に SW_RESTORE してから位置を書き直す。 */
             if (IsIconic(e->hwnd)) {
                 ShowWindow(e->hwnd, SW_RESTORE);
-                Sleep(10);  /* 復元完了待ち */
+                Sleep(50);  /* 復元完了待ち（アニメーション込み） */
             }
             SetWindowPos(e->hwnd, NULL, r->left, r->top, w, h,
                          SWP_NOZORDER | SWP_NOACTIVATE);
