@@ -242,7 +242,9 @@ static BOOL CALLBACK save_callback(HWND hwnd, LPARAM lParam)
         return TRUE;
     }
 
-    /* 容量不足なら 2 倍に拡張 */
+    /* 容量不足時の倍増拡張
+     * 初期 capacity は 0 のため最初の確保は 64 エントリ。
+     * realloc 失敗時は ctx->count を 0 にして列挙を中断し、不完全な部分データの保存を抑止する。 */
     if (ctx->count >= ctx->capacity) {
         int newCap = ctx->capacity == 0 ? 64 : ctx->capacity * 2;
         WindowEntry *newBuf = (WindowEntry *)realloc(ctx->entries, newCap * sizeof(WindowEntry));
@@ -410,25 +412,35 @@ static void save_positions(DWORD myPid)
 
     EnumWindows(save_callback, (LPARAM)&ctx);
 
-    if (ctx.count > 0) {
-        FILE *fp = fopen(savePath, "wb");
-        if (fp != NULL) {
-            DWORD magic   = SAVE_FILE_MAGIC;
-            DWORD version = SAVE_FILE_VERSION;
-            /* 書き込み失敗（ディスクフル等）時は不完全ファイルを削除 */
-            BOOL ok = (fwrite(&magic,     sizeof(DWORD), 1, fp) == 1) &&
-                      (fwrite(&version,   sizeof(DWORD), 1, fp) == 1) &&
-                      (fwrite(&ctx.count, sizeof(int),   1, fp) == 1) &&
-                      ((size_t)fwrite(ctx.entries, sizeof(WindowEntry), ctx.count, fp) ==
-                       (size_t)ctx.count);
-            fclose(fp);
-            if (!ok) {
-                DeleteFileA(savePath);
-            }
-        }
+    /* 対象ウィンドウなし時の残存ファイル削除
+     * 前回保存時のデータが古い状態で残ることを防ぐため、無条件に削除を試みる。
+     * ファイルが存在しなければ DeleteFileA は失敗するだけで副作用はない。 */
+    if (ctx.count == 0) {
+        DeleteFileA(savePath);
+        free(ctx.entries);
+        return;
     }
-    else {
-        /* 対象ウィンドウなし：古い保存ファイルが残っていれば削除 */
+
+    FILE *fp = fopen(savePath, "wb");
+    if (fp == NULL) {
+        free(ctx.entries);
+        return;
+    }
+
+    DWORD magic   = SAVE_FILE_MAGIC;
+    DWORD version = SAVE_FILE_VERSION;
+    /* 書き込み・クローズ失敗時は不完全ファイルを削除
+     * fclose の戻り値も検査することで、バッファリングされた書き込みが
+     * fclose 時に実体化する際の失敗（ディスクフル直前等）を検出する。 */
+    BOOL ok = (fwrite(&magic,     sizeof(DWORD), 1, fp) == 1) &&
+              (fwrite(&version,   sizeof(DWORD), 1, fp) == 1) &&
+              (fwrite(&ctx.count, sizeof(int),   1, fp) == 1) &&
+              ((size_t)fwrite(ctx.entries, sizeof(WindowEntry), ctx.count, fp) ==
+               (size_t)ctx.count);
+    if (fclose(fp) != 0) {
+        ok = FALSE;
+    }
+    if (!ok) {
         DeleteFileA(savePath);
     }
 
@@ -559,8 +571,9 @@ static void restore_positions(void)
     }
     fclose(fp);
 
-    /* 背面→前面の順に復元して Z オーダーを再現する
-     * EnumWindows は前面→背面の順で列挙するため、逆順で処理する */
+    /* Z オーダー復元のための逆順適用
+     * EnumWindows は前面→背面の順で列挙するため、保存配列を末尾から処理することで
+     * 背面→前面の順に SetWindowPos を呼び出して保存時の重なり順を再現する。 */
     for (int i = count - 1; i >= 0; i--) {
         WindowEntry *e = &entries[i];
 
@@ -604,8 +617,11 @@ static void restore_positions(void)
         }
         else if (e->placement.showCmd == SW_SHOWMINIMIZED ||
                  e->placement.showCmd == SW_SHOWMINNOACTIVE) {
-            /* SW_SHOWMINIMIZED：最小化時の GetWindowRect は (-32000, -32000) のため
-             * rcNormalPosition（通常時位置）を SetWindowPlacement で復元してから最小化する */
+            /* 最小化状態の復元
+             * 最小化時の GetWindowRect は (-32000, -32000) を返すため、通常時位置は
+             * rcNormalPosition から SetWindowPlacement で復元する。SW_SHOWMINNOACTIVE は
+             * 非アクティブ最小化を示すが、通常時位置の取り扱いは SW_SHOWMINIMIZED と同等のため
+             * 同一分岐で処理する。 */
             SetWindowPlacement(e->hwnd, &e->placement);
             ShowWindow(e->hwnd, SW_MINIMIZE);
         }
@@ -664,8 +680,22 @@ static void load_config(void)
 
     int in_section = 0;
     char line[1024];
+    BOOL firstLine = TRUE;
 
     while (fgets(line, sizeof(line), fp) != NULL) {
+        /* UTF-8 BOM のスキップ
+         * メモ帳等で UTF-8 BOM 付き保存された winfocus.toml の先頭セクションが
+         * EF BB BF に阻まれて認識されない問題を回避する。先頭行から BOM を取り除き、
+         * 以降の処理を BOM なし入力と等価に扱う。 */
+        if (firstLine) {
+            firstLine = FALSE;
+            if ((unsigned char)line[0] == 0xEF &&
+                (unsigned char)line[1] == 0xBB &&
+                (unsigned char)line[2] == 0xBF) {
+                memmove(line, line + 3, strlen(line + 3) + 1);
+            }
+        }
+
         /* インラインコメント除去
          * ダブルクォート外の '#' 以降を切り捨てる。
          * これがないと `expiry_hours = 24 # コメント` で strtol の endptr 検査が
