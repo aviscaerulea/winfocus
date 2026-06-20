@@ -101,8 +101,9 @@ typedef struct {
 /* --raise で収集するウィンドウ情報 */
 typedef struct {
     HWND hwnd;
-    int  appIndex;  /* g_raise_apps 内のインデックス（ソート用） */
-    BOOL iconic;    /* 最小化状態 */
+    int  appIndex;   /* g_raise_apps 内のインデックス（ソート用） */
+    int  enumIndex;  /* EnumWindows の列挙順（Z オーダー安定化用） */
+    BOOL iconic;     /* 最小化状態 */
 } RaiseEntry;
 
 /* --raise の EnumWindows コールバックコンテキスト */
@@ -465,9 +466,10 @@ static BOOL CALLBACK raise_callback(HWND hwnd, LPARAM lParam)
     }
 
     RaiseEntry *e = &ctx->entries[ctx->count];
-    e->hwnd     = hwnd;
-    e->appIndex = appIndex;
-    e->iconic   = IsIconic(hwnd);
+    e->hwnd      = hwnd;
+    e->appIndex  = appIndex;
+    e->enumIndex = ctx->count;
+    e->iconic    = IsIconic(hwnd);
 
     ctx->count++;
     return TRUE;
@@ -476,13 +478,18 @@ static BOOL CALLBACK raise_callback(HWND hwnd, LPARAM lParam)
 /*
  * RaiseEntry の qsort 比較関数
  *
- * appIndex 昇順。設定リスト順に前面化するためのソート。
+ * 主キー：appIndex 昇順（設定リスト順）。
+ * 副キー：enumIndex 降順（同一 exe 内の Z オーダー安定化）。
+ * 降順にする理由：SetWindowPos(HWND_TOP) で順に積み上げるため、
+ * 最背面を先に処理し最前面を最後に処理すれば元の重なり順が再現される。
  */
 static int raise_compare(const void *a, const void *b)
 {
     const RaiseEntry *ea = (const RaiseEntry *)a;
     const RaiseEntry *eb = (const RaiseEntry *)b;
-    return (ea->appIndex > eb->appIndex) - (ea->appIndex < eb->appIndex);
+    int cmp = (ea->appIndex > eb->appIndex) - (ea->appIndex < eb->appIndex);
+    if (cmp != 0) return cmp;
+    return (eb->enumIndex > ea->enumIndex) - (eb->enumIndex < ea->enumIndex);
 }
 
 /*
