@@ -8,6 +8,7 @@
  *   winfocus           全ウィンドウをプライマリモニタに集約（位置を自動保存）
  *   winfocus --save    現在のウィンドウ位置を保存する（移動なし）
  *   winfocus --restore 保存した位置に全ウィンドウを復元
+ *   winfocus --raise   設定した exe のウィンドウを前面化
  *
  * ビルド:
  *   task build
@@ -51,6 +52,7 @@ static int  g_whitelist_count = 0;                    /* ホワイトリスト�
 #define SECTION_NONE          0
 #define SECTION_TOOLWINDOW_WL 1
 #define SECTION_SAVE_FILE     2
+#define SECTION_RAISE         3
 
 /* 保存ファイル有効期限のデフォルト値（時間） */
 #define DEFAULT_SAVE_FILE_EXPIRY_HOURS 24
@@ -64,6 +66,13 @@ static int g_save_file_expiry_hours = DEFAULT_SAVE_FILE_EXPIRY_HOURS;
 /* 復元時に受け入れるエントリ数の上限
  * 保存ファイルの破損や異常データに対する安全策。通常の使用では数十〜数百エントリ程度。 */
 #define MAX_RESTORE_ENTRIES 10000
+
+/* --raise で前面化する exe 名（設定ファイルから読み込み）
+ * winfocus.toml の [raise] セクションの apps 配列で設定する。最大 32 エントリ。
+ * デフォルト値は main() で設定し、load_config() で [raise] セクション検出時にクリアする。 */
+#define MAX_RAISE_APPS 32
+static char g_raise_apps[MAX_RAISE_APPS][256];
+static int  g_raise_app_count = 0;
 
 /* 保存するウィンドウ情報 */
 typedef struct {
@@ -89,6 +98,21 @@ typedef struct {
     DWORD myPid;     /* 自プロセスの PID */
 } MoveContext;
 
+/* --raise で収集するウィンドウ情報 */
+typedef struct {
+    HWND hwnd;
+    int  appIndex;  /* g_raise_apps 内のインデックス（ソート用） */
+    BOOL iconic;    /* 最小化状態 */
+} RaiseEntry;
+
+/* --raise の EnumWindows コールバックコンテキスト */
+typedef struct {
+    RaiseEntry *entries;
+    int         count;
+    int         capacity;
+    DWORD       myPid;
+} RaiseContext;
+
 /*
  * 除外対象のシステムクラス名か判定する
  */
@@ -112,6 +136,82 @@ static BOOL is_whitelisted_toolwindow(const char *className)
             return TRUE;
         }
     }
+    return FALSE;
+}
+
+/*
+ * ウィンドウの所属プロセスの exe ファイル名を取得する
+ *
+ * PID からプロセスハンドルを開き、フルパスからファイル名部分を抽出する。
+ * 取得失敗時は FALSE を返す。
+ */
+static BOOL get_process_exe_name(HWND hwnd, char *buf, int bufSize)
+{
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == 0) {
+        return FALSE;
+    }
+
+    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (hProc == NULL) {
+        return FALSE;
+    }
+
+    char fullPath[MAX_PATH];
+    DWORD size = sizeof(fullPath);
+    if (!QueryFullProcessImageNameA(hProc, 0, fullPath, &size)) {
+        CloseHandle(hProc);
+        return FALSE;
+    }
+    CloseHandle(hProc);
+
+    const char *fileName = strrchr(fullPath, '\\');
+    fileName = fileName ? fileName + 1 : fullPath;
+
+    strncpy_s(buf, bufSize, fileName, _TRUNCATE);
+    return TRUE;
+}
+
+/*
+ * --raise の対象ウィンドウかどうかを判定する
+ *
+ * 可視・他プロセス・非除外クラスのウィンドウのうち、exe 名が g_raise_apps に
+ * 一致するものを対象とする。一致時は *appIndex にインデックスを書き込む。
+ */
+static BOOL is_raise_target(HWND hwnd, DWORD myPid, int *appIndex)
+{
+    if (!IsWindowVisible(hwnd)) {
+        return FALSE;
+    }
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == myPid) {
+        return FALSE;
+    }
+
+    char className[256] = {0};
+    if (GetClassNameA(hwnd, className, sizeof(className)) == 0) {
+        return FALSE;
+    }
+
+    if (is_excluded_class(className)) {
+        return FALSE;
+    }
+
+    char exeName[MAX_PATH] = {0};
+    if (!get_process_exe_name(hwnd, exeName, sizeof(exeName))) {
+        return FALSE;
+    }
+
+    for (int i = 0; i < g_raise_app_count; i++) {
+        if (_stricmp(exeName, g_raise_apps[i]) == 0) {
+            *appIndex = i;
+            return TRUE;
+        }
+    }
+
     return FALSE;
 }
 
@@ -336,6 +436,97 @@ static BOOL CALLBACK move_callback(HWND hwnd, LPARAM lParam)
     Sleep(5);
 
     return TRUE;
+}
+
+/*
+ * --raise の EnumWindows コールバック
+ *
+ * 対象ウィンドウの HWND・appIndex・最小化状態を収集する。
+ */
+static BOOL CALLBACK raise_callback(HWND hwnd, LPARAM lParam)
+{
+    RaiseContext *ctx = (RaiseContext *)lParam;
+
+    int appIndex;
+    if (!is_raise_target(hwnd, ctx->myPid, &appIndex)) {
+        return TRUE;
+    }
+
+    /* 容量不足時の倍増拡張（save_callback と同パターン） */
+    if (ctx->count >= ctx->capacity) {
+        int newCap = ctx->capacity == 0 ? 64 : ctx->capacity * 2;
+        RaiseEntry *newBuf = (RaiseEntry *)realloc(ctx->entries, newCap * sizeof(RaiseEntry));
+        if (newBuf == NULL) {
+            ctx->count = 0;
+            return FALSE;
+        }
+        ctx->entries  = newBuf;
+        ctx->capacity = newCap;
+    }
+
+    RaiseEntry *e = &ctx->entries[ctx->count];
+    e->hwnd     = hwnd;
+    e->appIndex = appIndex;
+    e->iconic   = IsIconic(hwnd);
+
+    ctx->count++;
+    return TRUE;
+}
+
+/*
+ * RaiseEntry の qsort 比較関数
+ *
+ * appIndex 昇順。設定リスト順に前面化するためのソート。
+ */
+static int raise_compare(const void *a, const void *b)
+{
+    const RaiseEntry *ea = (const RaiseEntry *)a;
+    const RaiseEntry *eb = (const RaiseEntry *)b;
+    return (ea->appIndex > eb->appIndex) - (ea->appIndex < eb->appIndex);
+}
+
+/*
+ * 設定ファイルで指定された exe のウィンドウを前面化する
+ *
+ * Phase 1: EnumWindows で対象ウィンドウを収集
+ * Phase 2: appIndex 順にソートし、順に SetWindowPos(HWND_TOP) で前面化
+ * リスト後方の exe が最終的に最前面になる。
+ */
+static void raise_windows(DWORD myPid)
+{
+    RaiseContext ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.myPid = myPid;
+
+    EnumWindows(raise_callback, (LPARAM)&ctx);
+
+    if (ctx.count == 0) {
+        free(ctx.entries);
+        return;
+    }
+
+    qsort(ctx.entries, ctx.count, sizeof(RaiseEntry), raise_compare);
+
+    for (int i = 0; i < ctx.count; i++) {
+        RaiseEntry *e = &ctx.entries[i];
+
+        if (e->iconic) {
+            ShowWindow(e->hwnd, SW_RESTORE);
+            /* 後続は Z オーダー変更のみ（SWP_NOMOVE | SWP_NOSIZE）で位置を書き戻さないため、
+             * --restore の Sleep(50)（位置復元のアニメーション完了待ち）より短い 10ms で十分 */
+            Sleep(10);
+        }
+
+        SetWindowPos(e->hwnd, HWND_TOP, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+        Sleep(5);
+    }
+
+    /* 最後のウィンドウをアクティブ化（リスト末尾の exe が最前面になる） */
+    SetForegroundWindow(ctx.entries[ctx.count - 1].hwnd);
+
+    free(ctx.entries);
 }
 
 /* FILETIME の単位換算
@@ -658,6 +849,7 @@ static void restore_positions(void)
  * exe と同じディレクトリの winfocus.toml から以下を読み込む。
  *   [toolwindow_whitelist].classes → g_whitelist
  *   [save_file].expiry_hours       → g_save_file_expiry_hours
+ *   [raise].apps                   → g_raise_apps
  * ファイルが存在しない場合や値が不正な場合は各デフォルト値で動作する。
  */
 static void load_config(void)
@@ -729,6 +921,10 @@ static void load_config(void)
             }
             else if (_stricmp(line, "[save_file]") == 0) {
                 in_section = SECTION_SAVE_FILE;
+            }
+            else if (_stricmp(line, "[raise]") == 0) {
+                in_section = SECTION_RAISE;
+                g_raise_app_count = 0;  /* デフォルト値をクリアして設定値で上書き */
             }
             else {
                 in_section = SECTION_NONE;
@@ -805,6 +1001,38 @@ static void load_config(void)
             }
         }
 
+        /* [raise] セクション
+         * apps 配列のパースは [toolwindow_whitelist].classes と同パターン */
+        if (in_section == SECTION_RAISE && _stricmp(key, "apps") == 0) {
+            char *p = val;
+            while (*p && g_raise_app_count < MAX_RAISE_APPS) {
+                while (*p && *p != '"') {
+                    p++;
+                }
+                if (*p == '\0') {
+                    break;
+                }
+                p++;  /* 開きクォートをスキップ */
+
+                char *start = p;
+                while (*p && *p != '"') {
+                    p++;
+                }
+                if (*p == '\0') {
+                    break;
+                }
+
+                int entryLen = (int)(p - start);
+                if (entryLen > 0 && entryLen < 256) {
+                    strncpy_s(g_raise_apps[g_raise_app_count],
+                              sizeof(g_raise_apps[g_raise_app_count]),
+                              start, entryLen);
+                    g_raise_app_count++;
+                }
+                p++;  /* 閉じクォートをスキップ */
+            }
+        }
+
     }
 
     fclose(fp);
@@ -812,6 +1040,11 @@ static void load_config(void)
 
 int main(int argc, char *argv[])
 {
+    /* --raise のデフォルト値（load_config で [raise] セクション検出時にクリアされる） */
+    strncpy_s(g_raise_apps[0], sizeof(g_raise_apps[0]),
+              "WindowsTerminal.exe", _TRUNCATE);
+    g_raise_app_count = 1;
+
     load_config();
 
     const char *arg1 = (argc >= 2) ? argv[1] : NULL;
@@ -825,6 +1058,11 @@ int main(int argc, char *argv[])
 
     if (arg1 && _stricmp(arg1, "--save") == 0) {
         save_positions(myPid);
+        return 0;
+    }
+
+    if (arg1 && _stricmp(arg1, "--raise") == 0) {
+        raise_windows(myPid);
         return 0;
     }
 

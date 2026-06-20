@@ -9,6 +9,7 @@ Win11 上のすべての可視ウィンドウを通常サイズに復元し、�
 - セカンダリモニタ上のウィンドウをプライマリモニタに移動
 - 集約処理の最後に全対象ウィンドウを最小化（後続の `--restore` 動作を安定化させるため）
 - ウィンドウ配置の保存・復元（有効期限付き、デフォルト 24 時間）
+- 指定した exe のウィンドウを一括で前面化（`--raise`）
 
 ## 動作要件
 
@@ -29,6 +30,7 @@ scoop install winfocus
 winfocus.exe           # ウィンドウ配置を保存してプライマリモニタに集約
 winfocus.exe --save    # 現在のウィンドウ配置を保存（移動なし）
 winfocus.exe --restore # 保存した配置に復元
+winfocus.exe --raise   # 設定した exe のウィンドウを前面化
 ```
 
 サイレント実行（出力なし）。
@@ -53,10 +55,14 @@ classes = ["SystemMetersWnd"]
 
 [save_file]
 expiry_hours = 24
+
+[raise]
+apps = ["WindowsTerminal.exe"]
 ```
 
 - `[toolwindow_whitelist].classes`：`WS_EX_TOOLWINDOW` スタイルを持つウィンドウはデフォルトでスキップされるが、列挙したクラス名のウィンドウは処理対象に含める
 - `[save_file].expiry_hours`：保存ファイルの有効期限（単位：時間）。`--restore` 実行時に更新日時からこの時間以上経過していれば、ファイル不在として扱い何もせずに終了する。`0` を指定すると有効期限判定を無効化する。デフォルト 24（= 24 時間）
+- `[raise].apps`：`--raise` で前面化する exe のファイル名リスト。リスト順に前面化し、最後の exe が最前面になる。セクション省略時は `WindowsTerminal.exe` のみ
 
 ## ビルド方法
 

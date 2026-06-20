@@ -42,6 +42,7 @@ winfocus/
 | `winfocus` | ウィンドウ配置を保存してからプライマリモニタに集約 |
 | `winfocus --save` | 現在のウィンドウ配置を保存する（移動なし） |
 | `winfocus --restore` | 保存した配置に全ウィンドウを復元する（保存ファイルは削除しない） |
+| `winfocus --raise` | 設定ファイルで指定した exe のウィンドウを前面化 |
 
 共通仕様：
 
@@ -85,10 +86,14 @@ classes = ["SystemMetersWnd"]
 
 [save_file]
 expiry_hours = 24
+
+[raise]
+apps = ["WindowsTerminal.exe"]
 ```
 
 - `[toolwindow_whitelist].classes`：`WS_EX_TOOLWINDOW` スタイルを持つウィンドウのうち、列挙したクラス名のウィンドウは処理対象とする
 - `[save_file].expiry_hours`：保存ファイルの有効期限（単位：時間）。`--restore` 時にこの時間以上経過していれば、ファイル不在として扱い何もせずに終了する。0 以上の整数を指定する。0 を指定すると有効期限判定を無効化する。負値・非数値はデフォルト値で動作する。デフォルト 24（= 24 時間）
+- `[raise].apps`：`--raise` で前面化する exe のファイル名リスト。リスト順に前面化し、最後の exe が最前面になる。最小化ウィンドウは復元してから前面化する。exe 名の大小文字は区別しない。セクション省略時のデフォルトは `WindowsTerminal.exe` のみ
 
 ファイルが存在しない場合、または値が不正な場合はデフォルト値で動作する。
 
@@ -132,7 +137,7 @@ task build
 - `IsIconic` / `IsZoomed` - 最小化・最大化判定
 - `ShowWindow` - 表示状態変更
 - `SetWindowPos` - 位置変更
-- `SetForegroundWindow` - フォアグラウンド化（F11 解除前）
+- `SetForegroundWindow` - フォアグラウンド化（F11 解除前・`--raise` の最終ウィンドウアクティブ化）
 - `SendInput` - キー入力シミュレーション（F11 全画面解除用）
 - `MonitorFromWindow` - 所属モニタ判定
 - `GetMonitorInfo` - モニタ情報取得
@@ -147,6 +152,9 @@ task build
 - `GetFileAttributesExA` - 保存ファイルの更新日時取得（stale 判定用）
 - `GetSystemTimeAsFileTime` - 現在時刻取得（stale 判定でブート時刻算出に使用）
 - `GetTickCount64` - システム起動からの経過ミリ秒取得（stale 判定用）
+- `OpenProcess` - プロセスハンドル取得（`--raise` の exe 名取得用）
+- `QueryFullProcessImageNameA` - プロセスの exe フルパス取得（`--raise` 用）
+- `CloseHandle` - プロセスハンドル解放
 
 ## 参考
 
