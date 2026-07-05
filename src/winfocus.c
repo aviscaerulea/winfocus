@@ -478,26 +478,39 @@ static BOOL CALLBACK raise_callback(HWND hwnd, LPARAM lParam)
 /*
  * RaiseEntry の qsort 比較関数
  *
- * 主キー：appIndex 昇順（設定リスト順）。
- * 副キー：enumIndex 降順（同一 exe 内の Z オーダー安定化）。
- * 降順にする理由：SetWindowPos(HWND_TOP) で順に積み上げるため、
- * 最背面を先に処理し最前面を最後に処理すれば元の重なり順が再現される。
+ * 主キー：appIndex 降順。（設定リスト末尾の exe を先頭に）
+ * 副キー：enumIndex 昇順。（EnumWindows は前面→背面の順に列挙するため、
+ *         昇順ソートで同一 exe 内も前面側から並ぶ）
+ * ソート結果は「前面にすべき順」の並びになる。raise_windows() はこの並びの
+ * 先頭から順に Z オーダーへチェーン挿入するため、appIndex・enumIndex とも
+ * 元の重なり順を保ったまま、リスト末尾の exe が最終的に最前面になる。
  */
 static int raise_compare(const void *a, const void *b)
 {
     const RaiseEntry *ea = (const RaiseEntry *)a;
     const RaiseEntry *eb = (const RaiseEntry *)b;
-    int cmp = (ea->appIndex > eb->appIndex) - (ea->appIndex < eb->appIndex);
+    int cmp = (eb->appIndex > ea->appIndex) - (eb->appIndex < ea->appIndex);
     if (cmp != 0) return cmp;
-    return (eb->enumIndex > ea->enumIndex) - (eb->enumIndex < ea->enumIndex);
+    return (ea->enumIndex > eb->enumIndex) - (ea->enumIndex < eb->enumIndex);
 }
 
 /*
  * 設定ファイルで指定された exe のウィンドウを前面化する
  *
  * Phase 1: EnumWindows で対象ウィンドウを収集
- * Phase 2: appIndex 順にソートし、順に SetWindowPos(HWND_TOP) で前面化
- * リスト後方の exe が最終的に最前面になる。
+ * Phase 2: raise_compare() で「前面にすべき順」にソートし、Z オーダーへ
+ *          チェーン挿入で反映する。リスト後方の exe が最終的に最前面になる。
+ *
+ * チェーン挿入方式を採る理由：
+ * SetWindowPos(HWND_TOP, ..., SWP_NOACTIVATE) は非アクティブ化を指定した
+ * 呼び出しのため、Win32 の制約でフォアグラウンドウィンドウ（他アプリ）を
+ * 追い越せない。単純に背面から HWND_TOP で積み上げる旧方式では、対象群は
+ * 他アプリの直下にしか積まれず、末尾の SetForegroundWindow で 1 枚だけが
+ * 前面化されて他の対象ウィンドウは他アプリの背後に取り残されていた。
+ * 対策として、最前面にすべき 1 枚だけを SetForegroundWindow で確実に
+ * フォアグラウンド化し、残りはその直後ろへ SetWindowPos(hwnd, prevHwnd, ...)
+ * で順に連結挿入する。フォアグラウンド境界を跨ぐ操作が先頭の 1 回に限られる
+ * ため、対象群全体が他アプリより手前に、相対順序を維持したまま並ぶ。
  */
 static void raise_windows(DWORD myPid)
 {
@@ -514,24 +527,35 @@ static void raise_windows(DWORD myPid)
 
     qsort(ctx.entries, ctx.count, sizeof(RaiseEntry), raise_compare);
 
+    /* 最小化解除を先に済ませる。SW_RESTORE は Z オーダーを乱すが、
+     * 後続のチェーン挿入で並べ直すため問題ない */
     for (int i = 0; i < ctx.count; i++) {
-        RaiseEntry *e = &ctx.entries[i];
-
-        if (e->iconic) {
-            ShowWindow(e->hwnd, SW_RESTORE);
-            /* 後続は Z オーダー変更のみ（SWP_NOMOVE | SWP_NOSIZE）で位置を書き戻さないため、
-             * --restore の Sleep(50)（位置復元のアニメーション完了待ち）より短い 10ms で十分 */
+        if (ctx.entries[i].iconic) {
+            ShowWindow(ctx.entries[i].hwnd, SW_RESTORE);
+            /* --restore の Sleep(50)（位置復元のアニメーション完了待ち）より
+             * 短い 10ms で十分（Z オーダー変更のみで位置は書き戻さないため） */
             Sleep(10);
         }
-
-        SetWindowPos(e->hwnd, HWND_TOP, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-
-        Sleep(5);
     }
 
-    /* 最後のウィンドウをアクティブ化（リスト末尾の exe が最前面になる） */
-    SetForegroundWindow(ctx.entries[ctx.count - 1].hwnd);
+    /* 先頭エントリ（= 最前面にすべきウィンドウ）を SetForegroundWindow でフォアグラウンド化する。
+     * 失敗時（他プロセスがフォアグラウンドロックを握っている等）は、後続の
+     * SetWindowPos(HWND_TOP, ..., SWP_NOACTIVATE) も同一の Win32 制約（非アクティブ呼び出しは
+     * フォアグラウンドウィンドウを追い越せない）を受けるため、この呼び出しでは前面化されない。
+     * 有効な代替手段はなく、その場合は対象群内部の相対順序（後続のチェーン挿入）のみ機能する */
+    SetForegroundWindow(ctx.entries[0].hwnd);
+    if (GetForegroundWindow() == ctx.entries[0].hwnd) {
+        SetWindowPos(ctx.entries[0].hwnd, HWND_TOP, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+    Sleep(5);
+
+    /* 2 枚目以降は直前のウィンドウの直後ろへ連結挿入し、相対順序を維持する */
+    for (int i = 1; i < ctx.count; i++) {
+        SetWindowPos(ctx.entries[i].hwnd, ctx.entries[i - 1].hwnd, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        Sleep(5);
+    }
 
     free(ctx.entries);
 }

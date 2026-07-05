@@ -137,7 +137,7 @@ task build
 - `IsIconic` / `IsZoomed` - 最小化・最大化判定
 - `ShowWindow` - 表示状態変更
 - `SetWindowPos` - 位置変更
-- `SetForegroundWindow` - フォアグラウンド化（F11 解除前・`--raise` の最終ウィンドウアクティブ化）
+- `SetForegroundWindow` - フォアグラウンド化（F11 解除前・`--raise` の最前面ウィンドウアクティブ化）
 - `SendInput` - キー入力シミュレーション（F11 全画面解除用）
 - `MonitorFromWindow` - 所属モニタ判定
 - `GetMonitorInfo` - モニタ情報取得
