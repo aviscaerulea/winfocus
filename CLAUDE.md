@@ -16,7 +16,7 @@ DisplayFusion によるウィンドウ再配置の前処理として使用する
 
 - 言語：C（Win32 API 直接呼び出し）
 - ビルド：cl.exe（Visual Studio 2026）によるバッチビルド
-- 構成：`src/winfocus.c` + `build.ps1` + `Taskfile.yml`
+- 構成：`src/winfocus.c` + `src/winfocus.rc` + `build.ps1` + `Taskfile.yml`
 - ターゲット：Windows 11 x64
 - DPI 対応：不要
 
@@ -25,7 +25,8 @@ DisplayFusion によるウィンドウ再配置の前処理として使用する
 ```
 winfocus/
 ├── src/
-│   └── winfocus.c           // メインソース
+│   ├── winfocus.c           // メインソース
+│   └── winfocus.rc          // バージョン情報リソース（VERSIONINFO）
 ├── scripts/
 │   └── dump_positions.py    // 保存ファイルダンプスクリプト（デバッグ用）
 ├── winfocus.toml            // 設定ファイル（exe と同じディレクトリに配置）
