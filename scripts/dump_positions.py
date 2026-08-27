@@ -18,7 +18,8 @@
 #   offset 268: WINDOWPLACEMENT        (44 bytes)
 #   offset 312: RECT rect              (16 bytes)
 #   offset 328: BOOL isTopmost         (4 bytes)
-#   合計: 332 bytes（パディングによる差異は actual_entry_size で自動計算）
+#   フィールド合計 332 bytes の後に 4 bytes のテールパディングが入り、
+#   sizeof(WindowEntry) は 336 bytes（実際のエントリ間隔は actual_entry_size で自動計算）
 #
 # ファイル形式（バージョン 2）：
 #   [uint32 magic=0x57464353]["WFCS"][uint32 version=2][int count][WindowEntry x count]
@@ -56,7 +57,7 @@ OFF_CLASSNAME  = 12
 OFF_WP         = 268  # WINDOWPLACEMENT 開始
 OFF_RECT       = 312  # RECT (left, top, right, bottom)
 OFF_TOPMOST    = 328  # BOOL isTopmost
-ENTRY_SIZE     = 332  # sizeof(WindowEntry) の目安（実測値を優先）
+ENTRY_SIZE     = 336  # sizeof(WindowEntry)（テールパディング込み。実測値を優先）
 
 # WINDOWPLACEMENT 内の相対オフセット
 WP_LENGTH      = 0
