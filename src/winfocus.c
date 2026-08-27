@@ -695,6 +695,7 @@ static void correct_offscreen(HWND hwnd)
  * ファイル更新日時が現在時刻から g_save_file_expiry_hours 時間以上古い場合 TRUE を返す。
  * g_save_file_expiry_hours が 0 の場合は判定を無効化し常に FALSE を返す。
  * 取得失敗時は FALSE を返し、復元を試みる安全側に倒す。
+ * 有効期限が 100ns 単位へ換算できない巨大値の場合も判定を無効化し FALSE を返す。
  */
 static BOOL is_save_file_expired(const char *path)
 {
@@ -726,7 +727,15 @@ static BOOL is_save_file_expired(const char *path)
 
     /* 経過時間（100ns 単位）と有効期限（時間 × 3600 秒 × FILETIME_UNITS_PER_SEC）を比較 */
     ULONGLONG elapsed     = now.QuadPart - fileMtime.QuadPart;
-    ULONGLONG expiry100ns = (ULONGLONG)g_save_file_expiry_hours * 3600ULL * FILETIME_UNITS_PER_SEC;
+
+    /* 換算オーバーフロー時の安全側フォールバック
+     * 有効期限を 100ns 単位へ換算するとラップする巨大値は、
+     * 極端に短い期限として誤判定されるため判定を無効化する。 */
+    if ((ULONGLONG)g_save_file_expiry_hours >
+        ULLONG_MAX / (3600ULL * FILETIME_UNITS_PER_SEC)) {
+        return FALSE;
+    }
+    ULONGLONG expiry100ns =(ULONGLONG)g_save_file_expiry_hours * 3600ULL * FILETIME_UNITS_PER_SEC;
 
     return elapsed > expiry100ns;
 }
