@@ -150,7 +150,7 @@ task build
 - `SetWindowPlacement` - 最小化状態の通常時位置（rcNormalPosition）復元のみに使用。通常状態・最大化状態は GetWindowRect↔SetWindowPlacement のラウンドトリップがカスタムタイトルバーを持つアプリ（WindowsTerminal 等）で冪等にならないため SetWindowPos を使う
 - `IsWindow` - HWND 有効性検証（復元時）
 - `GetModuleFileNameA` - 設定ファイル・保存ファイルパスの組み立て
-- `DeleteFileA` - 前回ブート判定時の stale ファイル削除・保存失敗時の不完全ファイル削除
+- `DeleteFileA` - 前回ブート判定時の stale ファイル削除・保存失敗時の不完全ファイル削除・復元時のフォーマット不一致（旧形式・破損）ファイル削除
 - `GetFileAttributesExA` - 保存ファイルの更新日時取得（stale 判定用）
 - `GetSystemTimeAsFileTime` - 現在時刻取得（stale 判定でブート時刻算出に使用）
 - `GetTickCount64` - システム起動からの経過ミリ秒取得（stale 判定用）
