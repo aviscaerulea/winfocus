@@ -22,7 +22,7 @@
 #   sizeof(WindowEntry) は 336 bytes（実際のエントリ間隔は actual_entry_size で自動計算）
 #
 # ファイル形式（バージョン 2）：
-#   [uint32 magic=0x57464353]["WFCS"][uint32 version=2][int count][WindowEntry x count]
+#   [uint32 magic=0x57464353 ("WFCS")][uint32 version=2][int count][WindowEntry x count]
 #
 # 使用方法:
 #   uv run scripts/dump_positions.py
