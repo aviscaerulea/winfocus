@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
 
 /* 除外するシステムウィンドウのクラス名 */
 static const char *EXCLUDED_CLASSES[] = {
@@ -1026,8 +1027,11 @@ static void load_config(void)
          * 非数値・負値・末尾余剰文字・INT_MAX 超過はデフォルト値維持 */
         if (in_section == SECTION_SAVE_FILE && _stricmp(key, "expiry_hours") == 0) {
             char *endptr;
+            /* strtol は範囲外値で errno=ERANGE を立てつつ LONG_MAX を返し、endptr は終端を指す。
+             * errno を検査しないと、INT_MAX 超過の指定が INT_MAX として受理される。 */
+            errno = 0;
             long v = strtol(val, &endptr, 10);
-            if (endptr != val && *endptr == '\0' && v >= 0 && v <= INT_MAX) {
+            if (errno == 0 && endptr != val && *endptr == '\0' && v >= 0 && v <= INT_MAX) {
                 g_save_file_expiry_hours = (int)v;
             }
         }
