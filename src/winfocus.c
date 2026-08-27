@@ -832,10 +832,13 @@ static void restore_positions(void)
 
         /* 位置・表示状態（最大化・最小化含む）を復元する。
          *
-         * 位置・サイズは SetWindowPlacement.rcNormalPosition（ワークスペース座標）ではなく
-         * 保存時の GetWindowRect（スクリーン座標）を SetWindowPos で適用する。
+         * 通常状態・最大化状態の位置・サイズは SetWindowPlacement.rcNormalPosition
+         *（ワークスペース座標）ではなく保存時の GetWindowRect（スクリーン座標）を
+         * SetWindowPos で適用する。
          * カスタムタイトルバー（WM_NCCALCSIZE フック）を持つアプリ（WindowsTerminal 等）では
          * placement のラウンドトリップが冪等にならないため、rect で位置精度を保証する。
+         * 最小化エントリのみ例外とし、最小化中の GetWindowRect が無効座標を返すため、
+         * 通常時位置は rcNormalPosition を SetWindowPlacement で適用する。
          */
         RECT *r = &e->rect;
         int   w = r->right  - r->left;
