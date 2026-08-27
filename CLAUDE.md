@@ -148,7 +148,7 @@ task build
 - `SystemParametersInfo(SPI_GETWORKAREA)` - プライマリモニタ作業領域取得
 - `GetSystemMetrics` - `SystemParametersInfo(SPI_GETWORKAREA)` 失敗時のスクリーン全体取得フォールバック
 - `GetWindowThreadProcessId` / `GetCurrentProcessId` - プロセス判定
-- `GetWindowPlacement` - 表示状態（showCmd：最大化・最小化・通常）の取得（位置は GetWindowRect を使う）
+- `GetWindowPlacement` - 表示状態（showCmd：最大化・最小化・通常）と最小化状態の通常時位置（rcNormalPosition）の取得（通常状態・最大化状態の位置は GetWindowRect を使う）
 - `SetWindowPlacement` - 最小化状態の通常時位置（rcNormalPosition）復元のみに使用。通常状態・最大化状態は GetWindowRect↔SetWindowPlacement のラウンドトリップがカスタムタイトルバーを持つアプリ（WindowsTerminal 等）で冪等にならないため SetWindowPos を使う
 - `IsWindow` - HWND 有効性検証（復元時）
 - `GetModuleFileNameA` - 設定ファイル・保存ファイルパスの組み立て
