@@ -942,6 +942,18 @@ static void load_config(void)
             line[--len] = '\0';
         }
 
+        /* 行頭の空白・タブを除去
+         * TOML はセクションヘッダやキーのインデントを許すため、詰めずに扱うと
+         * セクション判定（line[0] == '['）とキー比較が空白込みで失敗し、
+         * 設定が黙ってデフォルト値にフォールバックする。 */
+        int indent = 0;
+        while (line[indent] == ' ' || line[indent] == '\t') {
+            indent++;
+        }
+        if (indent > 0) {
+            memmove(line, line + indent, strlen(line + indent) + 1);
+        }
+
         if (line[0] == '\0') {
             continue;
         }
