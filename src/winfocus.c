@@ -80,7 +80,9 @@ typedef struct {
     HWND            hwnd;
     DWORD           pid;
     char            className[256];
-    WINDOWPLACEMENT placement;  /* showCmd の取得用（位置情報は rect を使う） */
+    WINDOWPLACEMENT placement;  /* showCmd（表示状態）の取得と、最小化エントリの
+                                 * 通常時位置（rcNormalPosition）復元に使う。
+                                 * 通常状態・最大化状態の位置は rect を使う。 */
     RECT            rect;       /* GetWindowRect のスクリーン座標。SetWindowPos で復元 */
     BOOL            isTopmost;  /* WS_EX_TOPMOST フラグ（Z オーダー復元用） */
 } WindowEntry;
