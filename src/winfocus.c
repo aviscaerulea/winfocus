@@ -903,7 +903,11 @@ static void load_config(void)
     }
 
     int in_section = 0;
-    char line[1024];
+    /* 1 行の最大長
+     * 配列は 1 行記述のみ対応するため、宣言容量の上限（32 エントリ × 255 文字 +
+     * クォートとカンマ + キー部）を 1 行に収める必要がある。
+     * 1024 バイトでは上限近くの設定が fgets で分断され、後半が黙って失われた。 */
+    char line[8192];
     BOOL firstLine = TRUE;
 
     while (fgets(line, sizeof(line), fp) != NULL) {
