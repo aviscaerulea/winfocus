@@ -374,7 +374,9 @@ static BOOL CALLBACK save_callback(HWND hwnd, LPARAM lParam)
     }
     /* スクリーン座標を GetWindowRect で取得する。
      * placement.rcNormalPosition（ワークスペース座標）は WM_NCCALCSIZE カスタム実装の
-     * アプリで SetWindowPlacement との非対称性が生じるため、復元には rect を使う。 */
+     * アプリで SetWindowPlacement との非対称性が生じるため、通常状態・最大化状態の
+     * 位置復元には rect を使う。最小化エントリの通常時位置のみ rcNormalPosition を
+     * SetWindowPlacement で適用する。 */
     if (!GetWindowRect(hwnd, &e->rect)) {
         return TRUE;  /* 取得失敗（ウィンドウ破棄等）：このエントリをスキップ */
     }
