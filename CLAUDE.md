@@ -54,7 +54,7 @@ winfocus/
 #### ウィンドウ配置の保存・復元
 
 - 保存先：exe と同じディレクトリの `winfocus.dat`（バイナリ形式、先頭 8 byte にマジック `WFCS` + バージョン番号）
-- 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（表示状態取得用）・`GetWindowRect` のスクリーン座標・`WS_EX_TOPMOST` フラグ
+- 保存内容：HWND・PID・クラス名・`WINDOWPLACEMENT`（表示状態の取得と最小化エントリの通常時位置の復元に使用）・`GetWindowRect` のスクリーン座標・`WS_EX_TOPMOST` フラグ
 - `--save` および引数なし実行では、実行時点のウィンドウ配置を即座に保存する
 - 画面外補正：`--restore` で復元後にウィンドウが全モニタ範囲外にある場合、プライマリモニタ作業領域に移動する
 - 判定順序：`--restore` は以下の順に評価し、いずれかにヒットした時点で後続処理をスキップする
