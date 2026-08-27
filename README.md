@@ -84,7 +84,7 @@ apps = ["WindowsTerminal.exe"]
 | 設定キー | 説明 |
 | --- | --- |
 | `[toolwindow_whitelist].classes` | 通常は対象外となるツールウィンドウのうち、処理対象に含めるウィンドウクラス名 |
-| `[save_file].expiry_hours` | 保存した配置の有効期限を時間単位で指定する。`0` で無期限。初期値は 24 |
+| `[save_file].expiry_hours` | 保存した配置の有効期限を時間単位で指定する。`0` で有効期限の判定を無効にする。初期値は 24 |
 | `[raise].apps` | `--raise` で前面化する実行ファイル名。初期値は `WindowsTerminal.exe` のみ |
 
 `[save_file].expiry_hours` を過ぎた配置は、`--restore` しても復元されません。
