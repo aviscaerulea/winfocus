@@ -153,8 +153,8 @@ task build
 - `IsWindow` - HWND 有効性検証（復元時）
 - `GetModuleFileNameA` - 設定ファイル・保存ファイルパスの組み立て
 - `DeleteFileA` - 前回ブート判定時の stale ファイル削除・保存失敗時の不完全ファイル削除・対象ウィンドウ不在時の残存ファイル削除・復元時のフォーマット不一致（旧形式・破損）ファイル削除
-- `GetFileAttributesExA` - 保存ファイルの更新日時取得（stale 判定用）
-- `GetSystemTimeAsFileTime` - 現在時刻取得（stale 判定でブート時刻算出に使用）
+- `GetFileAttributesExA` - 保存ファイルの更新日時取得（stale 判定・有効期限判定）
+- `GetSystemTimeAsFileTime` - 現在時刻取得（stale 判定でのブート時刻算出・有効期限判定での経過時間算出）
 - `GetTickCount64` - システム起動からの経過ミリ秒取得（stale 判定用）
 - `OpenProcess` - プロセスハンドル取得（`--raise` の exe 名取得用）
 - `QueryFullProcessImageNameA` - プロセスの exe フルパス取得（`--raise` 用）
