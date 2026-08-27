@@ -832,6 +832,14 @@ static void restore_positions(void)
 
         if (e->placement.showCmd == SW_SHOWMAXIMIZED) {
             /* SW_SHOWMAXIMIZED：先に保存座標のモニタへ移動してから最大化する 2 ステップ */
+            /* 最小化中は SetWindowPos の位置指定が効かず、最小化直前の位置で
+             * 最大化されるため、先に最小化を解除してから移動する。
+             * 引数なし実行は全対象を最小化して終わるため、直後の --restore では
+             * 対象がほぼ必ず最小化状態にある。 */
+            if (IsIconic(e->hwnd)) {
+                ShowWindow(e->hwnd, SW_RESTORE);
+                Sleep(50);  /* 復元完了待ち（アニメーション込み） */
+            }
             SetWindowPos(e->hwnd, NULL, r->left, r->top, w, h,
                          SWP_NOZORDER | SWP_NOACTIVATE);
             correct_offscreen(e->hwnd);
