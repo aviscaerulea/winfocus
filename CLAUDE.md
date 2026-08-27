@@ -140,11 +140,13 @@ task build
 - `ShowWindow` - 表示状態変更
 - `SetWindowPos` - 位置変更
 - `SetForegroundWindow` - フォアグラウンド化（F11 解除前・`--raise` の最前面ウィンドウアクティブ化）
+- `GetForegroundWindow` - フォアグラウンド化の成否確認（F11 解除前・`--raise` の最前面化判定）
 - `SendInput` - キー入力シミュレーション（F11 全画面解除用）
 - `MonitorFromWindow` - 所属モニタ判定
 - `GetMonitorInfo` - モニタ情報取得
 - `GetWindowRect` - ウィンドウ矩形取得（F11 全画面判定・保存時のスクリーン座標取得）
 - `SystemParametersInfo(SPI_GETWORKAREA)` - プライマリモニタ作業領域取得
+- `GetSystemMetrics` - `SystemParametersInfo(SPI_GETWORKAREA)` 失敗時のスクリーン全体取得フォールバック
 - `GetWindowThreadProcessId` / `GetCurrentProcessId` - プロセス判定
 - `GetWindowPlacement` - 表示状態（showCmd：最大化・最小化・通常）の取得（位置は GetWindowRect を使う）
 - `SetWindowPlacement` - 最小化状態の通常時位置（rcNormalPosition）復元のみに使用。通常状態・最大化状態は GetWindowRect↔SetWindowPlacement のラウンドトリップがカスタムタイトルバーを持つアプリ（WindowsTerminal 等）で冪等にならないため SetWindowPos を使う
