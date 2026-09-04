@@ -741,7 +741,7 @@ static BOOL is_save_file_expired(const char *path)
     }
     ULONGLONG expiry100ns =(ULONGLONG)g_save_file_expiry_hours * 3600ULL * FILETIME_UNITS_PER_SEC;
 
-    return elapsed > expiry100ns;
+    return elapsed >= expiry100ns;
 }
 
 /*
