@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/aviscaerulea/winfocus)](LICENSE)
 [![Build](https://github.com/aviscaerulea/winfocus/actions/workflows/release.yml/badge.svg)](https://github.com/aviscaerulea/winfocus/actions/workflows/release.yml)
 
-winfocus は、開いているすべてのウィンドウを通常サイズに戻し、メインのモニタへ集めるコマンドラインツールです。
+winfocus は、開いているすべてのウィンドウを通常サイズに戻し、メインモニタへ集めるコマンドラインツールです。
 複数のモニタにウィンドウが散らばってしまったときに、コマンド 1 つで手元の画面へまとめ直せます。
 集める前の配置を保存しておけば、後から元どおりに戻すこともできます。
 
@@ -46,7 +46,7 @@ scoop install winfocus
 
 ## 使い方
 
-いずれのコマンドも画面には何も出力せず、静かに終了します。
+いずれのコマンドも画面に何も出力せず終了します。
 
 | コマンド | 動作 |
 | --- | --- |
@@ -87,18 +87,18 @@ apps = ["WindowsTerminal.exe"]
 | `[save_file].expiry_hours` | 保存した配置の有効期限を時間単位で指定する。`0` で有効期限の判定を無効にする。初期値は 24 |
 | `[raise].apps` | `--raise` で前面化する実行ファイル名。初期値は `WindowsTerminal.exe` のみ |
 
-`[save_file].expiry_hours` を過ぎた配置は、`--restore` しても復元されません。
+`[save_file].expiry_hours` を過ぎた配置は、`--restore` しても復元しません。
 
 ## 制限事項
 
-- 復元はアプリを起動したままの状態を前提とする（アプリを再起動すると照合できず復元されない）
+- 復元はアプリを起動したままの状態を前提とする（アプリを再起動すると照合できないため復元できない）
 - 重なり順の復元は Windows の制約により完全には再現できない
 - F11 の全画面状態は保存のみで、復元の対象外
 - 復元時、保存後に新しく開いたウィンドウは保存対象のウィンドウより後ろへ回る
 
 > [!CAUTION]
 > `--save` は実行のたびに保存内容を上書きします。
-> 引数なしの `winfocus` で集約した後に `--save` すると集約後の状態が保存されるため、
+> 引数なしの `winfocus` で集約した後に `--save` すると集約後の状態を保存するため、
 > 元の配置へ戻したい場合は集約する前に `--save` してください。
 
 ## ビルド
@@ -110,4 +110,4 @@ apps = ["WindowsTerminal.exe"]
 task build
 ```
 
-`out\winfocus.exe` が生成されます。
+`out\winfocus.exe` を生成します。
